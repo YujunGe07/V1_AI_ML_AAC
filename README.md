@@ -37,3 +37,6 @@ The system is built around 5 core modules:
 - PyAudio, NumPy, SciPy  
 - `noisereduce` (real-time audio cleaning)
 
+## 👤 Author
+Yujun Ge
+
