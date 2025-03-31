@@ -1,0 +1,2 @@
+mv v1_ui_frontend.html templates/ 
+mv script.js static/js/ 

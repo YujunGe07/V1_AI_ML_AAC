@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from aac_system import AACSystem
 from output_postprocessing import OutputChannelManager, OutputConfig, OutputMode
@@ -109,15 +109,28 @@ def process_input() -> Dict:
         # Get input data
         data = request.get_json()
         
-        if not data:
+        if not data or 'text' not in data:
             return jsonify({
                 "status": "error",
-                "message": "No input data provided",
+                "message": "No input text provided",
                 "timestamp": datetime.now().isoformat()
             }), 400
             
         # Process input
         result = aac_server.process_input(data)
+        
+        # Ensure proper response structure
+        if result.get("status") == "success":
+            # Add any missing fields with defaults
+            if "data" not in result:
+                result["data"] = {}
+            if "context" not in result["data"]:
+                result["data"]["context"] = {
+                    "label": "general",
+                    "formality_level": "standard"
+                }
+            if "predictions" not in result["data"]:
+                result["data"]["predictions"] = []
         
         # Return result
         return jsonify(result)
@@ -163,6 +176,10 @@ def manage_config() -> Dict:
         "status": "success",
         "config": vars(aac_server.output_manager.config)
     })
+
+@app.route("/")
+def index():
+    return render_template("v1_ui_frontend.html")
 
 if __name__ == "__main__":
     # Run the Flask app
