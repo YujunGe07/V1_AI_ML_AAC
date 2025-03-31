@@ -1,4 +1,6 @@
 // Constants
+
+    
 const API_URL = 'http://localhost:5000';
 const ENDPOINTS = {
     process: `${API_URL}/process`,
@@ -6,169 +8,135 @@ const ENDPOINTS = {
     health: `${API_URL}/health`
 };
 
-// Add these constants and classes at the top of your script.js
-const KNOWN_LOCATIONS = {
-    home: { lat: 37.7749, lng: -122.4194 },    // SF City Center
-    work: { lat: 37.7845, lng: -122.4072 },    // Financial District
-    school: { lat: 37.8719, lng: -122.2585 }   // UC Berkeley
-};
 
-// Prediction Module
-class PredictionService {
-    constructor() {
-        this.API_URL = 'http://localhost:5000';
+navigator.geolocation.getCurrentPosition(
+    (position) => {
+      console.log("Latitude:", position.coords.latitude);
+      console.log("Longitude:", position.coords.longitude);
+    },
+    (error) => {
+      console.error("Geolocation error:", error);
     }
-
-    async getPredictions(text) {
-        try {
-            const response = await fetch(`${this.API_URL}/process`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ text, type: 'text' })
-            });
-            
-            const result = await response.json();
-            return result.data?.predictions || [];
-        } catch (error) {
-            console.error('Prediction error:', error);
-            return [];
-        }
-    }
-}
+  );
+  
 
 // Context Detection Module
 class ContextDetectionService {
     constructor() {
         this.currentContext = {
-            location: 'unknown',
-            timeOfDay: 'morning',
-            activity: 'idle',
-            confidence: 0
+            timeOfDay: '',
+            location: '',
+            dayType: ''
         };
-        
-        this.lastActivity = Date.now();
-        this.activityTimer = null;
-        this.locationWatcher = null;
-        
-        // Start all detection systems
-        this.startLocationDetection();
-        this.startTimeDetection();
-        this.startActivityDetection();
+
+        // Start context detection
+        this.updateContext();
+        // Update every minute
+        setInterval(() => this.updateContext(), 60000);
     }
 
-    startLocationDetection() {
-        if (navigator.geolocation) {
-            this.locationWatcher = navigator.geolocation.watchPosition(
-                (position) => {
-                    const { latitude, longitude } = position.coords;
-                    const location = this.getLocationName(latitude, longitude);
-                    
-                    this.updateContext({
-                        location,
-                        confidence: Math.max(this.currentContext.confidence, 0.7)
-                    });
+    async updateContext() {
+        // Get time context
+        const hour = new Date().getHours();
+        if (hour >= 5 && hour < 12) {
+            this.currentContext.timeOfDay = 'Morning';
+        } else if (hour >= 12 && hour < 17) {
+            this.currentContext.timeOfDay = 'Afternoon';
+        } else {
+            this.currentContext.timeOfDay = 'Evening';
+        }
+
+        // Get day type
+        const day = new Date().getDay();
+        this.currentContext.dayType = day === 0 || day === 6 ? 'Weekend' : 'Weekday';
+
+        // Update UI immediately for time and day
+        this.updateUI();
+
+        // Get location
+        if ('geolocation' in navigator) {
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    try {
+                        const { latitude, longitude } = position.coords;
+                        const response = await fetch(
+                            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+                        );
+                        const data = await response.json();
+                        this.currentContext.location = data.address.city || 
+                                                     data.address.town || 
+                                                     data.address.village || 
+                                                     'Unknown';
+                        // Update UI again after getting location
+                        this.updateUI();
+                        // Send to backend
+                        this.sendContextToBackend();
+                    } catch (error) {
+                        console.error("Location error:", error);
+                        this.currentContext.location = 'Location unavailable';
+                        this.updateUI();
+                    }
                 },
-                () => {
-                    this.updateContext({
-                        location: 'unknown',
-                        confidence: Math.min(this.currentContext.confidence, 0.3)
-                    });
+                (error) => {
+                    console.error("Geolocation error:", error);
+                    this.currentContext.location = 'Location unavailable';
+                    this.updateUI();
                 }
             );
         }
     }
 
-    getLocationName(latitude, longitude) {
-        for (const [name, coords] of Object.entries(KNOWN_LOCATIONS)) {
-            const distance = Math.sqrt(
-                Math.pow(latitude - coords.lat, 2) + 
-                Math.pow(longitude - coords.lng, 2)
-            );
-            if (distance < 0.01) { // Roughly 1km
-                return name;
-            }
+    updateUI() {
+        // Update time of day
+        const timeTag = document.getElementById('time-of-day');
+        if (timeTag) {
+            timeTag.innerHTML = `
+                <span class="text-xl">🕐</span>
+                <div>
+                    <p class="text-sm text-gray-500">Time of Day</p>
+                    <p class="text-lg font-semibold text-gray-900">${this.currentContext.timeOfDay}</p>
+                </div>
+            `;
         }
-        return 'unknown';
+
+        // Update location
+        const locationTag = document.getElementById('location');
+        if (locationTag) {
+            locationTag.innerHTML = `
+                <span class="text-xl">📍</span>
+                <div>
+                    <p class="text-sm text-gray-500">Location</p>
+                    <p class="text-lg font-semibold text-gray-900">${this.currentContext.location}</p>
+                </div>
+            `;
+        }
+
+        // Update day type
+        const dayTag = document.getElementById('day-type');
+        if (dayTag) {
+            dayTag.innerHTML = `
+                <span class="text-xl">📆</span>
+                <div>
+                    <p class="text-sm text-gray-500">Day Type</p>
+                    <p class="text-lg font-semibold text-gray-900">${this.currentContext.dayType}</p>
+                </div>
+            `;
+        }
     }
 
-    startTimeDetection() {
-        const updateTimeOfDay = () => {
-            const hour = new Date().getHours();
-            let timeOfDay;
-            
-            if (hour >= 5 && hour < 12) timeOfDay = 'morning';
-            else if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
-            else timeOfDay = 'evening';
-
-            this.updateContext({
-                timeOfDay,
-                confidence: Math.max(this.currentContext.confidence, 0.9)
+    async sendContextToBackend() {
+        try {
+            const response = await fetch('http://localhost:5001/update-context', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(this.currentContext)
             });
-        };
-
-        updateTimeOfDay();
-        this.timeInterval = setInterval(updateTimeOfDay, 60000);
-    }
-
-    startActivityDetection() {
-        const updateActivity = (activity) => {
-            this.lastActivity = Date.now();
-            this.updateContext({
-                activity,
-                confidence: Math.max(this.currentContext.confidence, 0.6)
-            });
-        };
-
-        // Set up event listeners
-        const handlers = {
-            keydown: () => updateActivity('typing'),
-            mousemove: () => updateActivity('active'),
-            focus: () => updateActivity('focused')
-        };
-
-        Object.entries(handlers).forEach(([event, handler]) => {
-            window.addEventListener(event, handler);
-        });
-
-        // Check for idle state
-        this.activityTimer = setInterval(() => {
-            if (Date.now() - this.lastActivity > 60000) {
-                this.updateContext({
-                    activity: 'idle',
-                    confidence: Math.max(this.currentContext.confidence, 0.8)
-                });
-            }
-        }, 10000);
-    }
-
-    updateContext(newContext) {
-        this.currentContext = {
-            ...this.currentContext,
-            ...newContext
-        };
-        
-        // Dispatch event for UI updates
-        const event = new CustomEvent('contextUpdate', { 
-            detail: this.currentContext 
-        });
-        window.dispatchEvent(event);
-    }
-
-    getCurrentContext() {
-        return this.currentContext;
-    }
-
-    cleanup() {
-        if (this.locationWatcher) {
-            navigator.geolocation.clearWatch(this.locationWatcher);
-        }
-        if (this.timeInterval) {
-            clearInterval(this.timeInterval);
-        }
-        if (this.activityTimer) {
-            clearInterval(this.activityTimer);
+            const data = await response.json();
+            console.log("Backend context update:", data);
+        } catch (error) {
+            console.error("Failed to update backend context:", error);
         }
     }
 }
@@ -267,92 +235,10 @@ class SpeechService {
     }
 }
 
-// Add this class after your existing ContextDetectionService class
-
-class ContextModelService {
-    constructor() {
-        this.phraseHistory = [];
-        this.currentPrediction = {
-            context: {
-                location: 'unknown',
-                timeOfDay: 'morning',
-                activity: 'idle',
-                confidence: 0
-            },
-            confidence: 0
-        };
-    }
-
-    addPhraseUsage(phrase, context) {
-        this.phraseHistory.push({
-            phrase,
-            timestamp: Date.now(),
-            context
-        });
-        
-        // Update prediction when new phrase is added
-        this.predictContext();
-    }
-
-    predictContext() {
-        if (this.phraseHistory.length === 0) return;
-
-        // Get recent history (last hour)
-        const recentHistory = this.phraseHistory.filter(
-            usage => Date.now() - usage.timestamp < 3600000
-        );
-
-        if (recentHistory.length === 0) return;
-
-        // Simple frequency-based prediction
-        const contextFrequency = recentHistory.reduce((acc, curr) => {
-            const key = `${curr.context.location}-${curr.context.timeOfDay}-${curr.context.activity}`;
-            acc[key] = (acc[key] || 0) + 1;
-            return acc;
-        }, {});
-
-        // Find most frequent context
-        const sortedContexts = Object.entries(contextFrequency)
-            .sort(([, a], [, b]) => b - a);
-
-        if (sortedContexts.length === 0) return;
-
-        const [mostFrequent] = sortedContexts;
-        const [context] = mostFrequent;
-        const [location, timeOfDay, activity] = context.split('-');
-
-        // Calculate confidence based on frequency
-        const totalUsage = Object.values(contextFrequency)
-            .reduce((a, b) => a + b, 0);
-        const confidence = contextFrequency[context] / totalUsage;
-
-        this.currentPrediction = {
-            context: {
-                location,
-                timeOfDay,
-                activity,
-                confidence
-            },
-            confidence
-        };
-
-        // Dispatch event for UI updates
-        const event = new CustomEvent('contextModelUpdate', {
-            detail: this.currentPrediction.context
-        });
-        window.dispatchEvent(event);
-    }
-
-    getCurrentPrediction() {
-        return this.currentPrediction;
-    }
-}
-
 // Main AAC Interface Class
 class AACInterface {
     constructor() {
-        // Initialize services
-        this.predictionService = new PredictionService();
+        // Remove unused services
         this.contextService = new ContextDetectionService();
         this.speechService = new SpeechService();
         
@@ -360,24 +246,19 @@ class AACInterface {
         this.initializeElements();
         this.bindEvents();
         
-        // Initialize context detection
-        this.contextDetection = new ContextDetectionService();
-        
         // Add context update listener
         window.addEventListener('contextUpdate', (event) => {
             this.updateContextDisplay(event.detail);
         });
 
-        // Add context model service
-        this.contextModelService = new ContextModelService();
-        
-        // Add context model update listener
-        window.addEventListener('contextModelUpdate', (event) => {
-            this.updateContextModelDisplay(event.detail);
+        // Initialize context display with current values
+        const initialContext = this.contextService.getCurrentContext();
+        this.updateContextDisplay({
+            ...initialContext,
+            label: 'general',
+            confidence: 0.5,
+            formality: 'neutral'
         });
-
-        // Enhance speech-related bindings
-        this.enhanceSpeechBindings();
     }
 
     initializeElements() {
@@ -436,36 +317,90 @@ class AACInterface {
         });
     }
 
-    async processInput(text) {
+    bindSubmitEvents() {
+        // Handle form submission
+        const form = document.querySelector('form');
+        if (form) {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleSubmit();
+            });
+        }
+
+        // Handle input events
+        this.inputField?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.handleSubmit();
+            }
+        });
+    }
+
+    async handleSubmit() {
+        const text = this.inputField?.value.trim();
+        if (!text) return;
+
         try {
             this.setLoading(true);
-            const response = await fetch(ENDPOINTS.process, {
+            await this.processInput(text);
+            // Optionally clear input after processing
+            // this.inputField.value = '';
+        } catch (error) {
+            this.showError('Failed to process input');
+            console.error('Submit error:', error);
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    async processInput(text) {
+        try {
+            // Get current context from context service
+            const currentContext = this.contextService.getCurrentContext();
+            
+            const response = await fetch(`${this.API_URL}/process`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ text })
+                body: JSON.stringify({ 
+                    text,
+                    context: {
+                        timeOfDay: currentContext.timeOfDay,
+                        dayType: currentContext.dayType,
+                        location: currentContext.location,
+                        activity: currentContext.activity
+                    }
+                })
             });
 
             const data = await response.json();
             
             if (data.status === 'success') {
-                // Update context from backend response
-                if (data.data.context) {
-                    this.updateContextDisplay(data.data.context);
-                    // Also update context model
-                    this.contextModelService.addPhraseUsage(text, data.data.context);
-                }
-                
                 // Update predictions
-                this.updatePredictions(data.data.predictions || []);
+                this.updatePredictions(data.data.predictions);
+                
+                // Combine backend and frontend context
+                const combinedContext = {
+                    ...data.data.context,
+                    timeOfDay: currentContext.timeOfDay,
+                    dayType: currentContext.dayType,
+                    location: currentContext.location,
+                    activity: currentContext.activity
+                };
+                
+                // Update context display
+                this.updateContextDisplay(combinedContext);
+                
+                if (data.data.processed_text) {
+                    this.updateProcessedText(data.data.processed_text);
+                }
             } else {
-                this.showError(data.message || 'Error processing input');
+                throw new Error(data.message || 'Failed to process input');
             }
         } catch (error) {
-            this.showError('Network error: Could not process input');
-        } finally {
-            this.setLoading(false);
+            this.showError(error.message);
+            throw error;
         }
     }
 
@@ -539,52 +474,29 @@ class AACInterface {
         });
     }
 
-    updateContextDisplay(context) {
-        if (this.contextDisplay) {
-            const confidence = Math.round((context.confidence || 0) * 100);
-            this.contextDisplay.innerHTML = `
-                <div class="context-info">
-                    <div class="context-label">
-                        <strong>Context:</strong> ${context.label || 'unknown'}
-                    </div>
-                    <div class="context-details">
-                        <span class="confidence">Confidence: ${confidence}%</span>
-                        ${context.location ? `<span class="location">Location: ${context.location}</span>` : ''}
-                        ${context.timeOfDay ? `<span class="time">Time: ${context.timeOfDay}</span>` : ''}
-                    </div>
-                </div>
-            `;
-        }
-    }
-
-    updateContextModelDisplay(contextModel) {
-        const contextDisplay = document.getElementById('context-display');
-        if (contextDisplay) {
-            const confidence = Math.round(contextModel.confidence * 100);
-            contextDisplay.innerHTML = `
-                <div class="flex flex-col space-y-1">
-                    <div class="text-sm text-gray-600">
-                        Location: ${contextModel.location} | Time: ${contextModel.timeOfDay} | Activity: ${contextModel.activity}
-                    </div>
-                    <div class="text-xs text-gray-500">
-                        Confidence: ${confidence}%
-                    </div>
-                </div>
-            `;
-        }
-    }
-
     updatePredictions(predictions) {
-        // Clear previous predictions
-        this.predictionsDiv.innerHTML = '';
+        if (!this.predictionsDiv) return;
+        
+        this.predictionsDiv.innerHTML = predictions
+            .map(prediction => `
+                <button class="prediction-btn" 
+                        onclick="window.aacInterface.usePrediction('${prediction}')">
+                    ${prediction}
+                </button>
+            `).join('');
+    }
 
-        // Create prediction buttons
-        predictions.forEach(prediction => {
-            const button = document.createElement('button');
-            button.className = 'suggestion-btn';
-            button.textContent = prediction;
-            this.predictionsDiv.appendChild(button);
-        });
+    updateProcessedText(text) {
+        if (this.outputArea) {
+            this.outputArea.textContent = text;
+        }
+    }
+
+    usePrediction(text) {
+        if (this.inputField) {
+            this.inputField.value = text;
+            this.handleSubmit();
+        }
     }
 
     setLoading(isLoading) {
@@ -598,23 +510,54 @@ class AACInterface {
     }
 
     showError(message) {
-        this.showMessage(message, 'error');
-    }
-
-    showMessage(message, type = 'info') {
-        const messageElement = document.getElementById('message-display');
-        messageElement.textContent = message;
-        messageElement.className = `message ${type}`;
-        
-        // Clear message after 3 seconds
-        setTimeout(() => {
-            messageElement.textContent = '';
-            messageElement.className = 'message';
-        }, 3000);
+        const errorDiv = document.getElementById('error-message');
+        if (errorDiv) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 3000);
+        }
     }
 }
 
 // Initialize interface when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.aacInterface = new AACInterface();
-}); 
+    console.log('AACInterface initialized');
+
+    // Test location detection
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            console.log("=== Location Test ===");
+            console.log("Raw coordinates:", {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude
+            });
+
+            // Test the Nominatim API directly
+            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&addressdetails=1`)
+                .then(res => res.json())
+                .then(data => {
+                    console.log("OpenStreetMap Data:", data);
+                    console.log("Address:", data.address);
+                    console.log("Display Name:", data.display_name);
+                })
+                .catch(err => console.error("API Error:", err));
+        },
+        (error) => {
+            console.error("Geolocation Error:", error);
+        }
+    );
+
+    // Initialize context detection
+    const contextService = new ContextDetectionService();
+    
+    // Add click handler for location permission
+    const locationTag = document.getElementById('location');
+    if (locationTag) {
+        locationTag.addEventListener('click', () => {
+            contextService.updateContext();
+        });
+    }
+});

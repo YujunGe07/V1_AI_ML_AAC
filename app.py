@@ -1,40 +1,40 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-import logging
-import os
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Store current context
+current_context = {
+    'timeOfDay': '',
+    'dayType': '',
+    'place': '',
+    'city': ''
+}
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
-@app.route("/process", methods=["POST"])
-def process():
+@app.route("/update-context", methods=["POST"])
+def update_context():
     try:
-        data = request.json
-        text = data.get("text", "")
-        response = {
+        context_update = request.json
+        current_context.update(context_update)
+        return jsonify({
             "status": "success",
-            "data": {
-                "predictions": ["Hello", "Hi there", "How are you"],
-                "context": {
-                    "label": "greeting",
-                    "confidence": 0.9
-                }
-            }
-        }
-        return jsonify(response)
+            "context": current_context
+        })
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
-@app.route("/health")
-def health():
-    return jsonify({"status": "ok"})
+@app.route("/get-context")
+def get_context():
+    return jsonify(current_context)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=True)
+    app.run(port=5001, debug=True)
