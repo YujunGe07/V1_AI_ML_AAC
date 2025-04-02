@@ -1,563 +1,1120 @@
-// Constants
-
-    
-const API_URL = 'http://localhost:5000';
+// === Constants ===
+const API_URL = 'http://localhost:5001';
 const ENDPOINTS = {
     process: `${API_URL}/process`,
     config: `${API_URL}/config`,
     health: `${API_URL}/health`
 };
 
+let isRecording = false;
+let currentLanguage = 'en-US';
+let selectedVoiceGender = 'male';
+let voiceRate = 1.0;
+let voicePitch = 1.0;
 
-navigator.geolocation.getCurrentPosition(
-    (position) => {
-      console.log("Latitude:", position.coords.latitude);
-      console.log("Longitude:", position.coords.longitude);
-    },
-    (error) => {
-      console.error("Geolocation error:", error);
-    }
-  );
-  
-
-// Context Detection Module
+// === Context Detection ===
 class ContextDetectionService {
     constructor() {
-        this.currentContext = {
-            timeOfDay: '',
-            location: '',
-            dayType: ''
-        };
-
-        // Start context detection
+        this.currentContext = { timeOfDay: '', location: '', dayType: '' };
         this.updateContext();
-        // Update every minute
         setInterval(() => this.updateContext(), 60000);
     }
 
     async updateContext() {
-        // Get time context
         const hour = new Date().getHours();
-        if (hour >= 5 && hour < 12) {
-            this.currentContext.timeOfDay = 'Morning';
-        } else if (hour >= 12 && hour < 17) {
-            this.currentContext.timeOfDay = 'Afternoon';
-        } else {
-            this.currentContext.timeOfDay = 'Evening';
-        }
+        if (hour >= 5 && hour < 12) this.currentContext.timeOfDay = 'Morning';
+        else if (hour >= 12 && hour < 17) this.currentContext.timeOfDay = 'Afternoon';
+        else this.currentContext.timeOfDay = 'Evening';
 
-        // Get day type
         const day = new Date().getDay();
         this.currentContext.dayType = day === 0 || day === 6 ? 'Weekend' : 'Weekday';
 
-        // Update UI immediately for time and day
-        this.updateUI();
-
-        // Get location
         if ('geolocation' in navigator) {
-            navigator.geolocation.getCurrentPosition(
-                async (position) => {
-                    try {
-                        const { latitude, longitude } = position.coords;
-                        const response = await fetch(
-                            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
-                        );
-                        const data = await response.json();
-                        this.currentContext.location = data.address.city || 
-                                                     data.address.town || 
-                                                     data.address.village || 
-                                                     'Unknown';
-                        // Update UI again after getting location
-                        this.updateUI();
-                        // Send to backend
-                        this.sendContextToBackend();
-                    } catch (error) {
-                        console.error("Location error:", error);
-                        this.currentContext.location = 'Location unavailable';
-                        this.updateUI();
-                    }
-                },
-                (error) => {
-                    console.error("Geolocation error:", error);
+            navigator.geolocation.getCurrentPosition(async (position) => {
+                try {
+                    const { latitude, longitude } = position.coords;
+                    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+                    const data = await response.json();
+                    this.currentContext.location = data.address.city || data.address.town || data.address.village || 'Unknown';
+                    this.updateUI();
+                    this.sendContextToBackend();
+                } catch (error) {
                     this.currentContext.location = 'Location unavailable';
                     this.updateUI();
                 }
-            );
+            }, () => {
+                this.currentContext.location = 'Location unavailable';
+                this.updateUI();
+            });
+        } else {
+            this.updateUI();
         }
     }
 
     updateUI() {
-        // Update time of day
         const timeTag = document.getElementById('time-of-day');
-        if (timeTag) {
-            timeTag.innerHTML = `
-                <span class="text-xl">🕐</span>
-                <div>
-                    <p class="text-sm text-gray-500">Time of Day</p>
-                    <p class="text-lg font-semibold text-gray-900">${this.currentContext.timeOfDay}</p>
-                </div>
-            `;
-        }
-
-        // Update location
-        const locationTag = document.getElementById('location');
-        if (locationTag) {
-            locationTag.innerHTML = `
-                <span class="text-xl">📍</span>
-                <div>
-                    <p class="text-sm text-gray-500">Location</p>
-                    <p class="text-lg font-semibold text-gray-900">${this.currentContext.location}</p>
-                </div>
-            `;
-        }
-
-        // Update day type
+        if (timeTag) timeTag.textContent = this.currentContext.timeOfDay;
+        const locTag = document.getElementById('location');
+        if (locTag) locTag.textContent = this.currentContext.location;
         const dayTag = document.getElementById('day-type');
-        if (dayTag) {
-            dayTag.innerHTML = `
-                <span class="text-xl">📆</span>
-                <div>
-                    <p class="text-sm text-gray-500">Day Type</p>
-                    <p class="text-lg font-semibold text-gray-900">${this.currentContext.dayType}</p>
-                </div>
-            `;
-        }
+        if (dayTag) dayTag.textContent = this.currentContext.dayType;
     }
 
     async sendContextToBackend() {
         try {
-            const response = await fetch('http://localhost:5001/update-context', {
+            await fetch(`${API_URL}/update-context`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(this.currentContext)
             });
-            const data = await response.json();
-            console.log("Backend context update:", data);
-        } catch (error) {
-            console.error("Failed to update backend context:", error);
+        } catch (err) {
+            console.error('Context update failed:', err);
         }
+    }
+
+    getCurrentContext() {
+        return this.currentContext;
     }
 }
 
-// Speech Service Module
+// === Speech Service ===
 class SpeechService {
     constructor() {
         this.recognition = null;
         this.synthesis = window.speechSynthesis;
-        this.isListening = false;
-        this.initializeSpeechRecognition();
         this.voices = [];
-        
-        // Load available voices
-        if (this.synthesis) {
-            // Chrome loads voices asynchronously
-            this.synthesis.onvoiceschanged = () => {
-                this.voices = this.synthesis.getVoices();
-            };
-            // For browsers that load voices synchronously
-            this.voices = this.synthesis.getVoices();
-        }
-    }
 
-    initializeSpeechRecognition() {
-        const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (SpeechRecognition) {
             this.recognition = new SpeechRecognition();
             this.recognition.continuous = true;
             this.recognition.interimResults = true;
         }
+
+        if (this.synthesis) {
+            this.synthesis.onvoiceschanged = () => {
+                this.voices = this.synthesis.getVoices();
+            };
+            this.voices = this.synthesis.getVoices();
+        }
     }
 
     startListening(onResult, onError) {
         if (!this.recognition) {
-            onError?.('Speech recognition not supported in this browser.');
+            onError?.('Speech recognition not supported.');
             return;
         }
-
-        this.recognition.onstart = () => {
-            this.isListening = true;
-            // Dispatch event for UI updates
-            window.dispatchEvent(new CustomEvent('speechStateChange', { 
-                detail: { isListening: true } 
-            }));
-        };
-
-        this.recognition.onresult = (event) => {
-            const transcript = Array.from(event.results)
-                .map(result => result[0])
-                .map(result => result.transcript)
-                .join('');
-            
+        this.recognition.onresult = (e) => {
+            const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
             onResult?.(transcript);
         };
-
-        this.recognition.onend = () => {
-            this.isListening = false;
-            // Dispatch event for UI updates
-            window.dispatchEvent(new CustomEvent('speechStateChange', { 
-                detail: { isListening: false } 
-            }));
-        };
-
-        this.recognition.onerror = (event) => {
-            onError?.(event.error);
-            this.isListening = false;
-        };
-
+        this.recognition.onerror = (e) => onError?.(e.error);
         this.recognition.start();
     }
 
     stopListening() {
-        if (this.recognition && this.isListening) {
-            this.recognition.stop();
-            this.isListening = false;
-        }
+        if (this.recognition) this.recognition.stop();
     }
 
     speak(text, options = {}, onEnd = null) {
-        if (!this.synthesis || !text) return;
-
+        if (!text || !this.synthesis) return;
         const utterance = new SpeechSynthesisUtterance(text);
-        
-        // Apply speech options
-        utterance.voice = options.voice || this.voices[0];
-        utterance.pitch = options.pitch || 1;
-        utterance.rate = options.rate || 1;
-        utterance.volume = options.volume || 1;
+        utterance.pitch = Number.isFinite(voicePitch) ? voicePitch : 1.0;
+        utterance.rate = Number.isFinite(voiceRate) ? voiceRate : 1.0;
+        utterance.volume = 1.0;
+        utterance.lang = currentLanguage;
 
+        const match = this.voices.find(v => v.lang.includes(currentLanguage));
+        if (match) utterance.voice = match;
         if (onEnd) utterance.onend = onEnd;
-        
-        // Cancel any ongoing speech
+
         this.synthesis.cancel();
         this.synthesis.speak(utterance);
     }
 }
 
-// Main AAC Interface Class
-class AACInterface {
+// === Audio Recorder ===
+class AudioRecorder {
     constructor() {
-        // Remove unused services
-        this.contextService = new ContextDetectionService();
-        this.speechService = new SpeechService();
-        
-        // Initialize interface elements
-        this.initializeElements();
-        this.bindEvents();
-        
-        // Add context update listener
-        window.addEventListener('contextUpdate', (event) => {
-            this.updateContextDisplay(event.detail);
-        });
-
-        // Initialize context display with current values
-        const initialContext = this.contextService.getCurrentContext();
-        this.updateContextDisplay({
-            ...initialContext,
-            label: 'general',
-            confidence: 0.5,
-            formality: 'neutral'
-        });
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+        this.isRecording = false;
     }
 
-    initializeElements() {
-        this.inputField = document.getElementById('user-input');
-        this.submitBtn = document.querySelector('button[type="submit"]');
-        this.predictionsDiv = document.getElementById('predictions');
-        this.contextDisplay = document.getElementById('context-display');
-        this.formalityDisplay = document.getElementById('formality-display');
-        this.loadingIndicator = document.getElementById('loading-indicator');
-        this.outputArea = document.getElementById('outputArea');
-        this.suggestions = document.getElementById('suggestions');
-        this.speakBtn = document.getElementById('speakBtn');
-        this.micBtn = document.getElementById('micBtn');
-        this.clearBtn = document.getElementById('clearBtn');
-    }
-
-    bindEvents() {
-        // Enhanced speech button handling
-        this.speakBtn?.addEventListener('click', () => {
-            const text = this.inputField?.value.trim();
-            if (text) {
-                this.speakText(text);
-            }
-        });
-
-        // Enhanced submit button handling
-        this.submitBtn?.addEventListener('click', (e) => {
-            e.preventDefault();
-            const text = this.inputField?.value.trim();
-            if (text) {
-                this.processInput(text);
-            }
-        });
-
-        // Handle suggestion clicks
-        this.predictionsDiv.addEventListener('click', (e) => {
-            if (e.target.classList.contains('suggestion-btn')) {
-                this.handleSuggestionClick(e.target.textContent);
-            }
-        });
-
-        // Listen for speech state changes
-        window.addEventListener('speechStateChange', (event) => {
-            this.updateSpeechUI(event.detail.isListening);
-        });
-    }
-
-    enhanceSpeechBindings() {
-        // Handle microphone button clicks
-        this.micBtn?.addEventListener('click', () => {
-            if (this.speechService.isListening) {
-                this.stopListening();
-            } else {
-                this.startListening();
-            }
-        });
-    }
-
-    bindSubmitEvents() {
-        // Handle form submission
-        const form = document.querySelector('form');
-        if (form) {
-            form.addEventListener('submit', (e) => {
-                e.preventDefault();
-                this.handleSubmit();
-            });
-        }
-
-        // Handle input events
-        this.inputField?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                this.handleSubmit();
-            }
-        });
-    }
-
-    async handleSubmit() {
-        const text = this.inputField?.value.trim();
-        if (!text) return;
-
-        try {
-            this.setLoading(true);
-            await this.processInput(text);
-            // Optionally clear input after processing
-            // this.inputField.value = '';
-        } catch (error) {
-            this.showError('Failed to process input');
-            console.error('Submit error:', error);
-        } finally {
-            this.setLoading(false);
-        }
-    }
-
-    async processInput(text) {
-        try {
-            // Get current context from context service
-            const currentContext = this.contextService.getCurrentContext();
-            
-            const response = await fetch(`${this.API_URL}/process`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ 
-                    text,
-                    context: {
-                        timeOfDay: currentContext.timeOfDay,
-                        dayType: currentContext.dayType,
-                        location: currentContext.location,
-                        activity: currentContext.activity
-                    }
-                })
-            });
-
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                // Update predictions
-                this.updatePredictions(data.data.predictions);
-                
-                // Combine backend and frontend context
-                const combinedContext = {
-                    ...data.data.context,
-                    timeOfDay: currentContext.timeOfDay,
-                    dayType: currentContext.dayType,
-                    location: currentContext.location,
-                    activity: currentContext.activity
-                };
-                
-                // Update context display
-                this.updateContextDisplay(combinedContext);
-                
-                if (data.data.processed_text) {
-                    this.updateProcessedText(data.data.processed_text);
-                }
-            } else {
-                throw new Error(data.message || 'Failed to process input');
-            }
-        } catch (error) {
-            this.showError(error.message);
-            throw error;
-        }
-    }
-
-    handleSuggestionClick(text) {
-        // Set the clicked suggestion as input
-        this.inputField.value = text;
-        
-        // Process the new input
-        this.processInput(text);
-    }
-
-    startListening() {
-        this.updateSpeechUI(true);
-        this.speechService.startListening(
-            // On result
-            (transcript) => {
-                if (this.inputField) {
-                    this.inputField.value = transcript;
-                    // Optionally trigger input processing
-                    this.processInput(transcript);
-                }
-            },
-            // On error
-            (error) => {
-                this.showError(`Speech recognition error: ${error}`);
-                this.updateSpeechUI(false);
-            }
-        );
-    }
-
-    stopListening() {
-        this.speechService.stopListening();
-        this.updateSpeechUI(false);
-    }
-
-    updateSpeechUI(isListening) {
-        if (this.micBtn) {
-            if (isListening) {
-                this.micBtn.classList.add('mic-recording');
-                this.micBtn.querySelector('i')?.classList.replace('ri-mic-line', 'ri-mic-fill');
-            } else {
-                this.micBtn.classList.remove('mic-recording');
-                this.micBtn.querySelector('i')?.classList.replace('ri-mic-fill', 'ri-mic-line');
-            }
-        }
-    }
-
-    speakText(text) {
-        if (!text) {
-            text = this.inputField?.value?.trim();
-        }
-        
-        if (!text) return;
-
-        const options = {
-            pitch: 1,
-            rate: 1,
-            volume: 1
+    async startRecording() {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        this.mediaRecorder = new MediaRecorder(stream);
+        this.audioChunks = [];
+        this.mediaRecorder.ondataavailable = e => this.audioChunks.push(e.data);
+        this.mediaRecorder.onstop = async () => {
+            const blob = new Blob(this.audioChunks, { type: 'audio/webm' });
+            await this.transcribeAudio(blob);
+            stream.getTracks().forEach(track => track.stop());
         };
+        this.mediaRecorder.start();
+        this.isRecording = true;
+    }
 
-        // Disable speak button while speaking
-        if (this.speakBtn) {
-            this.speakBtn.disabled = true;
+    stopRecording() {
+        if (this.mediaRecorder) {
+            this.mediaRecorder.stop();
+            this.isRecording = false;
         }
+    }
 
-        this.speechService.speak(text, options, () => {
-            // Re-enable speak button after speech ends
-            if (this.speakBtn) {
-                this.speakBtn.disabled = false;
-            }
+    async transcribeAudio(blob) {
+        const formData = new FormData();
+        formData.append('audio', blob);
+        const response = await fetch(`${API_URL}/transcribe-audio`, {
+            method: 'POST',
+            body: formData
         });
-    }
-
-    updatePredictions(predictions) {
-        if (!this.predictionsDiv) return;
-        
-        this.predictionsDiv.innerHTML = predictions
-            .map(prediction => `
-                <button class="prediction-btn" 
-                        onclick="window.aacInterface.usePrediction('${prediction}')">
-                    ${prediction}
-                </button>
-            `).join('');
-    }
-
-    updateProcessedText(text) {
-        if (this.outputArea) {
-            this.outputArea.textContent = text;
-        }
-    }
-
-    usePrediction(text) {
-        if (this.inputField) {
-            this.inputField.value = text;
-            this.handleSubmit();
-        }
-    }
-
-    setLoading(isLoading) {
-        if (isLoading) {
-            this.loadingIndicator.style.display = 'block';
-            this.submitBtn.disabled = true;
-        } else {
-            this.loadingIndicator.style.display = 'none';
-            this.submitBtn.disabled = false;
-        }
-    }
-
-    showError(message) {
-        const errorDiv = document.getElementById('error-message');
-        if (errorDiv) {
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            setTimeout(() => {
-                errorDiv.style.display = 'none';
-            }, 3000);
-        }
+        const data = await response.json();
+        document.getElementById('outputText').value = data.transcript || '';
     }
 }
 
-// Initialize interface when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    window.aacInterface = new AACInterface();
-    console.log('AACInterface initialized');
+// === AAC Interface ===
+class AACInterface {
+    constructor() {
+        this.contextService = new ContextDetectionService();
+        this.speechService = new SpeechService();
+        this.recorder = new AudioRecorder();
 
-    // Test location detection
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            console.log("=== Location Test ===");
-            console.log("Raw coordinates:", {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude
+        this.inputField = document.getElementById('user-input');
+        this.outputText = document.getElementById('outputText');
+        this.speakBtn = document.getElementById('speakBtn');
+        this.micBtn = document.getElementById('micBtn');
+        this.clearBtn = document.getElementById('clearBtn');
+        this.predictionsDiv = document.getElementById('predictions');
+
+        this.bindEvents();
+    }
+
+    bindEvents() {
+        this.speakBtn?.addEventListener('click', () => {
+            const text = this.outputText?.value.trim() || this.inputField?.value.trim();
+            if (text) this.speakText(text);
+        });
+
+        this.micBtn?.addEventListener('click', () => {
+            if (!this.recorder.isRecording) {
+                this.speechService.startListening(transcript => {
+                    this.inputField.value = transcript;
+                });
+                this.recorder.startRecording();
+            } else {
+                this.speechService.stopListening();
+                this.recorder.stopRecording();
+            }
+        });
+
+        this.clearBtn?.addEventListener('click', () => {
+            this.inputField.value = '';
+            this.outputText.value = '';
+        });
+
+        document.querySelectorAll('.suggestion-btn')?.forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.inputField.value = btn.textContent;
             });
-
-            // Test the Nominatim API directly
-            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&addressdetails=1`)
-                .then(res => res.json())
-                .then(data => {
-                    console.log("OpenStreetMap Data:", data);
-                    console.log("Address:", data.address);
-                    console.log("Display Name:", data.display_name);
-                })
-                .catch(err => console.error("API Error:", err));
-        },
-        (error) => {
-            console.error("Geolocation Error:", error);
-        }
-    );
-
-    // Initialize context detection
-    const contextService = new ContextDetectionService();
-    
-    // Add click handler for location permission
-    const locationTag = document.getElementById('location');
-    if (locationTag) {
-        locationTag.addEventListener('click', () => {
-            contextService.updateContext();
         });
     }
+
+    speakText(text) {
+        this.speechService.speak(text, {}, () => {
+            this.speakBtn.disabled = false;
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    window.aacInterface = new AACInterface();
+    console.log('✅ AACInterface initialized');
+});
+
+async function fetchUserLocationName() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return resolve("Unknown");
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
+
+      // First try Foursquare
+      const fsqApiKey = "fsq3rX+qLUv4Vt7uYUIkyXVLe3rhd65P4gad/9/7pAr/0Uk=";
+      try {
+        const fsqResponse = await fetch(
+          `https://api.foursquare.com/v3/places/search?ll=${latitude},${longitude}&limit=1`,
+          {
+            headers: {
+              Accept: "application/json",
+              Authorization: fsqApiKey,
+            },
+          }
+        );
+        const fsqData = await fsqResponse.json();
+        const businessName = fsqData.results?.[0]?.name;
+        if (businessName) return resolve(businessName);
+      } catch (err) {
+        console.warn("Foursquare failed, falling back to city");
+      }
+
+      // Fallback to city name
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
+        );
+        const data = await response.json();
+        const city =
+          data.address.city ||
+          data.address.town ||
+          data.address.village ||
+          data.address.hamlet ||
+          "Unknown";
+        resolve(city);
+      } catch (err) {
+        console.error("Reverse geocoding error:", err);
+        resolve("Unknown");
+      }
+    }, () => {
+      resolve("Unknown");
+    });
+  });
+}
+
+
+const mockHistory = [
+{ text: "Could you please help me with this task?", time: "10:30 AM", context: "Work" },
+{ text: "I'm feeling much better today, thank you!", time: "Yesterday", context: "Health" },
+{ text: "The weather is beautiful outside", time: "2 days ago", context: "General" },
+{ text: "I would like to order a vegetarian pizza with extra cheese", time: "3 days ago", context: "Food" },
+{ text: "Can we schedule a meeting for tomorrow afternoon?", time: "4 days ago", context: "Work" },
+{ text: "I'm feeling excited about the upcoming concert", time: "5 days ago", context: "Emotions" },
+{ text: "Could you please pass me the water?", time: "1 week ago", context: "Food" },
+{ text: "I enjoyed our conversation yesterday", time: "1 week ago", context: "Social" }
+];
+const phraseSuggestions = {
+all: [
+"How are you?",
+"I need help",
+"Thank you",
+"Yes, please",
+"No, thanks",
+"Could you repeat that?",
+"I don't understand"
+],
+emotions: [
+"I'm feeling happy today",
+"I'm a bit sad",
+"I'm excited about this",
+"I'm feeling anxious",
+"I'm frustrated",
+"I'm proud of myself",
+"I love you"
+],
+food: [
+"I'm hungry",
+"I would like some water",
+"Can I have coffee please?",
+"I'd like to order pizza",
+"This tastes delicious",
+"I'm thirsty",
+"No more, thank you"
+],
+home: [
+"Please turn on the lights",
+"Can you close the window?",
+"I need help in the bathroom",
+"It's too cold in here",
+"I'd like to watch TV",
+"Please lock the door",
+"I need my medication"
+],
+health: [
+"I'm in pain",
+"I need my medication",
+"I feel dizzy",
+"I need to see a doctor",
+"I'm feeling better today",
+"I need to rest",
+"Can you help me stand up?"
+],
+social: [
+"Nice to meet you",
+"How was your day?",
+"I'd like to go outside",
+"Can we talk later?",
+"I enjoyed our conversation",
+"Please give me some privacy",
+"Let's celebrate together"
+]
+};
+let filteredHistory = [...mockHistory];
+let currentFilter = 'all';
+function updateHistory(filter = 'all') {
+const historyList = document.getElementById('historyList');
+filteredHistory = filter === 'all' ?
+[...mockHistory] :
+mockHistory.filter(item => item.context === filter);
+historyList.innerHTML = filteredHistory.map(item => `
+<div class="history-item flex items-center justify-between p-5 bg-gray-100 rounded-lg transition-all duration-300 mb-4" data-context="${item.context}">
+<div>
+<p class="text-gray-900 font-medium">${item.text}</p>
+<div class="flex items-center space-x-2 mt-2">
+<span class="text-sm text-gray-400">${item.time}</span>
+<span class="text-sm text-gray-500">•</span>
+<span class="text-sm text-gray-500">${item.context}</span>
+</div>
+</div>
+<div class="flex items-center space-x-3">
+<button class="history-reuse w-10 h-10 flex items-center justify-center text-gray-400 hover:text-primary hover:bg-gray-200 rounded-full cursor-pointer transition-all duration-300 keyboard-focus" tabindex="0" aria-label="Reuse this phrase">
+<i class="ri-restart-line ri-lg"></i>
+</button>
+<button class="history-speak w-10 h-10 flex items-center justify-center text-gray-400 hover:text-primary hover:bg-gray-200 rounded-full cursor-pointer transition-all duration-300 keyboard-focus" tabindex="0" aria-label="Speak this phrase">
+<i class="ri-volume-up-line ri-lg"></i>
+</button>
+</div>
+</div>
+`).join('');
+// Add event listeners to history buttons
+document.querySelectorAll('.history-reuse').forEach((button, index) => {
+button.addEventListener('click', () => {
+document.getElementById('outputText').value = filteredHistory[index].text;
+// Add a visual feedback
+button.classList.add('text-primary', 'bg-gray-200');
+setTimeout(() => {
+button.classList.remove('text-primary', 'bg-gray-200');
+}, 300);
+});
+});
+document.querySelectorAll('.history-speak').forEach((button, index) => {
+button.addEventListener('click', () => {
+const success = speakText(filteredHistory[index].text);
+if (success) {
+// Add a visual feedback
+button.classList.add('text-primary', 'bg-gray-200');
+// Update the main speak button state
+updateSpeakButtonState(true);
+setTimeout(() => {
+button.classList.remove('text-primary', 'bg-gray-200');
+}, 300);
+showFeedbackToast(`Speaking: "${filteredHistory[index].text.substring(0, 30)}${filteredHistory[index].text.length > 30 ? '...' : ''}"`);
+}
+});
+});
+}
+function showFeedbackToast(message) {
+const toast = document.getElementById('feedbackToast');
+const messageEl = document.getElementById('feedbackMessage');
+messageEl.textContent = message;
+toast.classList.add('show');
+setTimeout(() => {
+toast.classList.remove('show');
+}, 3000);
+}
+// Initialize speech synthesis voices
+function initVoices() {
+if (typeof speechSynthesis !== 'undefined') {
+speechSynthesis.onvoiceschanged = function() {
+// Voices are now loaded
+console.log('Voices loaded:', speechSynthesis.getVoices().length);
+};
+}
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const closeOverrideModal = document.getElementById('closeOverrideModal');
+  const manualOverrideModal = document.getElementById('manualOverrideModal');
+
+  if (closeOverrideModal && manualOverrideModal) {
+    closeOverrideModal.addEventListener('click', () => {
+      manualOverrideModal.classList.add('hidden');
+    });
+  } else {
+    console.warn('Missing #closeOverrideModal or #manualOverrideModal');
+  }
+});
+document.addEventListener('DOMContentLoaded', () => {
+updateHistory();
+initVoices();
+const settingsBtn = document.getElementById('settingsBtn');
+const profileBtn = document.getElementById('profileBtn');
+const settingsModal = document.getElementById('settingsModal');
+const profileModal = document.getElementById('profileModal');
+const closeButtons = document.querySelectorAll('.closeModal');
+const speakBtn = document.getElementById('speakBtn');
+const micBtn = document.getElementById('micBtn');
+const outputText = document.getElementById('outputText');
+const outputArea = document.getElementById('outputArea');
+const suggestionsContainer = document.getElementById('suggestions');
+const darkModeToggle = document.getElementById('darkModeToggle');
+const categoryTabs = document.querySelectorAll('.category-tab');
+const clearBtn = document.getElementById('clearBtn');
+const historyFilterBtn = document.getElementById('historyFilterBtn');
+const historyFilterDropdown = document.getElementById('historyFilterDropdown');
+const feedbackToast = document.getElementById('feedbackToast');
+const closeFeedback = document.getElementById('closeFeedback');
+const maleVoiceBtn = document.getElementById('maleVoiceBtn');
+const femaleVoiceBtn = document.getElementById('femaleVoiceBtn');
+const voiceSpeed = document.getElementById('voiceSpeed');
+const voicePitch = document.getElementById('voicePitch');
+const languageSelector = document.getElementById('languageSelector');
+const languageDropdown = document.getElementById('languageDropdown');
+const languageOptions = document.querySelectorAll('.language-option');
+const addNewPhraseBtn = document.getElementById('addNewPhraseBtn');
+const newPhraseModal = document.getElementById('newPhraseModal');
+const closeNewPhraseModal = document.getElementById('closeNewPhraseModal');
+const newPhraseText = document.getElementById('newPhraseText');
+const newPhraseCategory = document.getElementById('newPhraseCategory');
+const saveNewPhrase = document.getElementById('saveNewPhrase');
+const cancelNewPhrase = document.getElementById('cancelNewPhrase');
+const assistantGreeting = document.getElementById('assistantGreeting');
+// Update greeting based on time of day
+function updateGreeting() {
+const userName = "Yujun";
+const greeting = `Hi ${userName}, ready when you are.`;
+assistantGreeting.innerHTML = `<span class="typing-animation">${greeting}</span>`;
+}
+// Call the greeting function
+updateGreeting();
+let isRecording = false;
+let currentCategory = 'all';
+let selectedVoiceGender = 'male';
+let voiceRate = 1;
+let savedPhrases = [
+"I'm feeling great today!",
+"Could you help me with something?",
+"I need a break"
+];
+// Function to update suggestions based on category
+function updateSuggestions(category) {
+currentCategory = category;
+suggestionsContainer.innerHTML = '';
+phraseSuggestions[category].forEach(phrase => {
+const button = document.createElement('button');
+button.className = 'suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-20 cursor-pointer keyboard-focus';
+button.textContent = phrase;
+button.dataset.category = category;
+button.setAttribute('tabindex', '0');
+button.addEventListener('click', () => {
+outputText.value = phrase;
+});
+suggestionsContainer.appendChild(button);
+});
+}
+// Initialize with default suggestions
+updateSuggestions('all');
+// History filter dropdown
+historyFilterBtn.addEventListener('click', () => {
+historyFilterDropdown.classList.toggle('hidden');
+});
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+if (!historyFilterBtn.contains(e.target) && !historyFilterDropdown.contains(e.target)) {
+historyFilterDropdown.classList.add('hidden');
+}
+});
+// Filter history items
+document.querySelectorAll('#historyFilterDropdown button').forEach(button => {
+button.addEventListener('click', () => {
+const filter = button.dataset.filter;
+currentFilter = filter;
+updateHistory(filter);
+historyFilterDropdown.classList.add('hidden');
+historyFilterBtn.querySelector('span').textContent = filter === 'all' ? 'Filter' : filter;
+});
+});
+// Show tooltip on hover for mic button
+micBtn.addEventListener('mouseenter', () => {
+document.getElementById('micTooltip').style.opacity = '1';
+});
+micBtn.addEventListener('mouseleave', () => {
+document.getElementById('micTooltip').style.opacity = '0';
+});
+const listeningOverlay = document.getElementById('listeningOverlay');
+const cancelListening = document.getElementById('cancelListening');
+cancelListening.addEventListener('click', () => {
+stopListening();
+});
+async function startListening() {
+isRecording = true;
+micBtn.classList.add('mic-recording');
+micBtn.querySelector('i').classList.replace('ri-mic-line', 'ri-mic-fill');
+// Show the full-screen overlay
+listeningOverlay.classList.add('active');
+// Show context indicator if context mode is enabled
+const contextIndicator = document.getElementById('contextIndicator');
+const currentContextDisplay = document.getElementById('currentContextDisplay');
+if (contextModeEnabled) {
+const contextInfo = await detectContext();
+currentContextDisplay.textContent = contextInfo.activity;
+contextIndicator.style.opacity = '1';
+} else {
+contextIndicator.style.opacity = '0';
+}
+// Simulate speech recognition after 3 seconds
+setTimeout(async () => {
+  if (isRecording) {
+    let recognizedPhrase;
+    if (contextModeEnabled) {
+      const contextInfo = await detectContext();
+      recognizedPhrase = contextInfo.suggestions[Math.floor(Math.random() * contextInfo.suggestions.length)];
+    } else {
+      recognizedPhrase = phraseSuggestions[currentCategory][Math.floor(Math.random() * phraseSuggestions[currentCategory].length)];
+    }
+    outputText.value = recognizedPhrase;
+    showFeedbackToast('Speech recognized');
+    stopListening();
+  }
+}, 3000);
+
+}
+function stopListening() {
+isRecording = false;
+micBtn.classList.remove('mic-recording');
+micBtn.querySelector('i').classList.replace('ri-mic-fill', 'ri-mic-line');
+listeningOverlay.classList.remove('active');
+// If context mode is enabled, schedule next auto-listening
+if (contextModeEnabled) {
+// Random time between 30-90 seconds for next auto-listening
+const nextListeningTime = 30000 + Math.random() * 60000;
+setTimeout(() => {
+if (contextModeEnabled && Math.random() > 0.7) {
+// 30% chance of auto-listening
+startListening();
+}
+}, nextListeningTime);
+}
+}
+micBtn.addEventListener('click', () => {
+if(!isRecording) {
+startListening();
+} else {
+stopListening();
+}
+});
+darkModeToggle.addEventListener('click', () => {
+document.documentElement.classList.toggle('dark');
+const icon = darkModeToggle.querySelector('i');
+if (document.documentElement.classList.contains('dark')) {
+icon.classList.replace('ri-moon-line', 'ri-sun-line');
+darkModeToggle.classList.add('bg-primary', 'text-white');
+darkModeToggle.classList.remove('bg-gray-100', 'text-gray-600');
+// Save preference to localStorage
+localStorage.setItem('darkMode', 'enabled');
+} else {
+icon.classList.replace('ri-sun-line', 'ri-moon-line');
+darkModeToggle.classList.remove('bg-primary', 'text-white');
+darkModeToggle.classList.add('bg-gray-100', 'text-gray-600');
+// Save preference to localStorage
+localStorage.setItem('darkMode', 'disabled');
+}
+});
+// Check for saved dark mode preference
+const darkModeSetting = localStorage.getItem('darkMode');
+if (darkModeSetting === 'enabled') {
+darkModeToggle.click(); // Trigger the click event to enable dark mode
+}
+categoryTabs.forEach(tab => {
+tab.addEventListener('click', () => {
+const category = tab.dataset.category;
+// Update tab styling
+categoryTabs.forEach(t => {
+t.classList.replace('bg-primary', 'bg-gray-100');
+t.classList.replace('text-white', 'text-gray-700');
+t.classList.remove('shadow-md');
+});
+tab.classList.replace('bg-gray-100', 'bg-primary');
+tab.classList.replace('text-gray-700', 'text-white');
+tab.classList.add('shadow-md');
+// Update suggestions based on category
+updateSuggestions(category);
+});
+});
+settingsBtn.addEventListener('click', () => {
+settingsModal.classList.remove('hidden');
+});
+profileBtn.addEventListener('click', () => {
+profileModal.classList.remove('hidden');
+});
+closeButtons.forEach(button => {
+button.addEventListener('click', () => {
+settingsModal.classList.add('hidden');
+profileModal.classList.add('hidden');
+});
+});
+closeFeedback.addEventListener('click', () => {
+feedbackToast.classList.remove('show');
+});
+clearBtn.addEventListener('click', () => {
+outputText.value = '';
+showFeedbackToast('Text cleared');
+});
+function speakText(text) {
+if (text) {
+// Cancel any ongoing speech
+window.speechSynthesis.cancel();
+const utterance = new SpeechSynthesisUtterance(text);
+// Set language
+utterance.lang = currentLanguage;
+// Set rate and pitch
+utterance.rate = voiceRate;
+utterance.pitch = voicePitch;
+// Get available voices
+const voices = window.speechSynthesis.getVoices();
+// Filter voices by gender and language
+let filteredVoices = voices.filter(voice =>
+voice.lang.includes(currentLanguage.split('-')[0]) ||
+voice.lang === currentLanguage
+);
+// If no matching voices found, use any available voice
+if (filteredVoices.length === 0) {
+filteredVoices = voices;
+}
+// Try to find a voice matching the selected gender
+let selectedVoice = null;
+if (selectedVoiceGender === 'male') {
+selectedVoice = filteredVoices.find(voice => !voice.name.includes('female') && !voice.name.toLowerCase().includes('girl'));
+} else {
+selectedVoice = filteredVoices.find(voice => voice.name.includes('female') || voice.name.toLowerCase().includes('girl'));
+}
+// If no matching gender voice found, use the first available voice
+if (!selectedVoice && filteredVoices.length > 0) {
+selectedVoice = filteredVoices[0];
+}
+if (selectedVoice) {
+utterance.voice = selectedVoice;
+}
+// Add event listeners for speech events
+utterance.onstart = function() {
+updateSpeakButtonState(true);
+};
+utterance.onend = function() {
+updateSpeakButtonState(false);
+showFeedbackToast('Speaking complete');
+};
+utterance.onerror = function() {
+updateSpeakButtonState(false);
+showFeedbackToast('Error while speaking');
+};
+window.speechSynthesis.speak(utterance);
+return true;
+}
+return false;
+}
+function updateSpeakButtonState(isSpeaking) {
+const speakingText = speakBtn.querySelector('.speaking-text');
+const speakingIndicator = speakBtn.querySelector('.speaking-indicator');
+if (isSpeaking) {
+speakBtn.classList.add('speak-active');
+speakingText.textContent = 'Speaking';
+speakingIndicator.classList.remove('hidden');
+} else {
+speakBtn.classList.remove('speak-active');
+speakingText.textContent = 'Speak';
+speakingIndicator.classList.add('hidden');
+}
+}
+speakBtn.addEventListener('click', () => {
+if (outputText.value) {
+const success = speakText(outputText.value);
+if (success) {
+// Update button to show speaking state
+updateSpeakButtonState(true);
+// Show feedback toast
+showFeedbackToast(`Speaking: "${outputText.value.substring(0, 30)}${outputText.value.length > 30 ? '...' : ''}"`);
+// Add to history
+const now = new Date();
+const timeString = now.getHours() + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes() + ' ' + (now.getHours() >= 12 ? 'PM' : 'AM');
+mockHistory.unshift({
+text: outputText.value,
+time: timeString,
+context: currentCategory.charAt(0).toUpperCase() + currentCategory.slice(1)
+});
+if (mockHistory.length > 10) {
+mockHistory.pop();
+}
+updateHistory(currentFilter);
+}
+}
+});
+// Add event listeners for quick category buttons
+document.querySelectorAll('.quick-category').forEach(button => {
+button.addEventListener('click', () => {
+const category = button.dataset.category;
+// Add visual feedback
+button.classList.add('border-primary', 'shadow-md');
+setTimeout(() => {
+button.classList.remove('border-primary', 'shadow-md');
+// Find and click the corresponding category tab
+document.querySelector(`.category-tab[data-category="${category}"]`).click();
+}, 200);
+});
+});
+// Add event listener for context mode toggle
+const contextModeToggle = document.getElementById('contextModeToggle');
+let contextModeEnabled = true; // Default to enabled
+let contextListeningInterval = null;
+let currentContext = 'all';
+// Function to detect context based on time, simulated location and activity
+
+async function detectContext() {
+  const now = new Date();
+  const hour = now.getHours();
+  const day = now.getDay();
+  const isWeekend = day === 0 || day === 6;
+  const dayContext = isWeekend ? 'Weekend' : 'Weekday';
+
+  let timeContext, locationContext, activityContext, contextCategory, suggestions;
+
+  if (hour >= 5 && hour < 12) {
+    timeContext = 'Morning';
+  } else if (hour >= 12 && hour < 17) {
+    timeContext = 'Afternoon';
+  } else if (hour >= 17 && hour < 22) {
+    timeContext = 'Evening';
+  } else {
+    timeContext = 'Night';
+  }
+
+  // Fetch dynamic location
+  locationContext = await fetchUserLocationName();
+
+  if (hour >= 6 && hour < 10) {
+    contextCategory = 'home';
+    activityContext = 'morning routine';
+    suggestions = ["Good morning", "I'd like some coffee please", "What's the weather today?", "I need help getting dressed", "Time for breakfast"];
+  } else if (hour >= 11 && hour < 14) {
+    contextCategory = 'food';
+    activityContext = 'lunch time';
+    suggestions = ["I'm hungry", "What's for lunch?", "Could I have some water?", "This tastes delicious", "I'd like some more please"];
+  } else if (hour >= 14 && hour < 17) {
+    contextCategory = 'social';
+    activityContext = 'afternoon activities';
+    suggestions = ["How are you today?", "I'd like to go outside", "Can we watch TV?", "I enjoyed our conversation", "Let's do something together"];
+  } else if (hour >= 17 && hour < 20) {
+    contextCategory = 'food';
+    activityContext = 'dinner time';
+    suggestions = ["What's for dinner?", "I'm thirsty", "This is delicious", "I'm full now", "Thank you for the meal"];
+  } else if (hour >= 20 && hour < 23) {
+    contextCategory = 'home';
+    activityContext = 'evening routine';
+    suggestions = ["I'd like to watch a movie", "Could you turn down the lights?", "I'm getting tired", "It's been a good day", "I need my medication"];
+  } else {
+    contextCategory = 'health';
+    activityContext = 'night time';
+    suggestions = ["I can't sleep", "I need water", "I need help to the bathroom", "I'm not feeling well", "Could you adjust my pillow?"];
+  }
+
+  return {
+    context: contextCategory,
+    activity: activityContext,
+    location: locationContext,
+    timeContext: timeContext,
+    dayContext: dayContext,
+    suggestions: suggestions
+  };
+}
+
+
+
+function updateContextDisplay(contextInfo) {
+// Find and click the corresponding category tab
+const categoryTab = document.querySelector(`.category-tab[data-category="${contextInfo.context}"]`);
+if (categoryTab && !categoryTab.classList.contains('bg-primary')) {
+categoryTab.click();
+}
+// Update the context chips
+const timeContextEl = document.getElementById('timeContext');
+const locationContextEl = document.getElementById('locationContext');
+const dayContextEl = document.getElementById('dayContext');
+const activeContextInfo = document.getElementById('activeContextInfo');
+if (timeContextEl && locationContextEl && dayContextEl) {
+timeContextEl.textContent = contextInfo.timeContext;
+locationContextEl.textContent = contextInfo.location;
+dayContextEl.textContent = contextInfo.dayContext;
+activeContextInfo.style.opacity = '1';
+}
+// Also update the listening overlay context display
+const currentTimeContext = document.getElementById('currentTimeContext');
+const currentLocationContext = document.getElementById('currentLocationContext');
+const currentDayContext = document.getElementById('currentDayContext');
+if (currentTimeContext && currentLocationContext && currentDayContext) {
+currentTimeContext.textContent = contextInfo.timeContext;
+currentLocationContext.textContent = contextInfo.location;
+currentDayContext.textContent = contextInfo.dayContext;
+}
+// Update suggestions with context-specific ones
+if (contextInfo.suggestions && contextInfo.suggestions.length > 0) {
+const suggestionsContainer = document.getElementById('suggestions');
+suggestionsContainer.innerHTML = '';
+// Add a context indicator at the beginning
+const contextIndicator = document.createElement('div');
+contextIndicator.className = 'px-4 py-2 bg-primary text-white rounded-full whitespace-nowrap text-sm font-medium context-active flex items-center space-x-2';
+contextIndicator.innerHTML = `
+<i class="ri-radar-line"></i>
+<span>${contextInfo.activity}</span>
+`;
+suggestionsContainer.appendChild(contextIndicator);
+contextInfo.suggestions.forEach(phrase => {
+const button = document.createElement('button');
+button.className = 'suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-20 cursor-pointer keyboard-focus';
+button.textContent = phrase;
+button.dataset.category = contextInfo.context;
+button.setAttribute('tabindex', '0');
+button.addEventListener('click', () => {
+document.getElementById('outputText').value = phrase;
+});
+suggestionsContainer.appendChild(button);
+});
+}
+// Show context information in a toast
+showFeedbackToast(`Context detected: ${contextInfo.timeContext} | ${contextInfo.location} | ${contextInfo.dayContext}`);
+}
+async function startContextListening() {
+// Initial context detection
+const contextInfo = await detectContext();
+currentContext = contextInfo.context;
+updateContextDisplay(contextInfo);
+// Set up interval to periodically check for context changes (every 30 seconds)
+contextListeningInterval = setInterval(() => {
+  (async () => {
+    const newContextInfo = await detectContext();
+    if (newContextInfo.context !== currentContext) {
+      currentContext = newContextInfo.context;
+      updateContextDisplay(newContextInfo);
+    }
+  })();
+}, 30000);
+
+// Simulate occasional automatic listening based on context
+setTimeout(() => {
+if (contextModeEnabled && Math.random() > 0.7) {
+// 30% chance of auto-listening
+startListening();
+}
+}, 45000);
+}
+function stopContextListening() {
+if (contextListeningInterval) {
+clearInterval(contextListeningInterval);
+contextListeningInterval = null;
+}
+}
+// Show tooltip on hover for context mode toggle
+contextModeToggle.addEventListener('mouseenter', () => {
+document.getElementById('contextTooltip').classList.remove('hidden');
+});
+contextModeToggle.addEventListener('mouseleave', () => {
+document.getElementById('contextTooltip').classList.add('hidden');
+});
+// Initialize context mode (enabled by default)
+function initContextMode() {
+if (contextModeEnabled) {
+startContextListening();
+document.getElementById('activeContextInfo').style.opacity = '1';
+}
+}
+// Call this after DOM is loaded
+initContextMode();
+contextModeToggle.addEventListener('click', () => {
+contextModeEnabled = !contextModeEnabled;
+// Update toggle button appearance
+if (contextModeEnabled) {
+contextModeToggle.classList.remove('bg-gray-100', 'text-gray-700');
+contextModeToggle.classList.add('bg-primary', 'text-white');
+contextModeToggle.querySelector('i').classList.replace('ri-brain-line', 'ri-radar-line');
+contextModeToggle.querySelector('span:first-of-type').textContent = 'Smart Context';
+contextModeToggle.querySelector('span:last-of-type').textContent = 'ON';
+contextModeToggle.querySelector('span:last-of-type').classList.remove('bg-gray-200', 'text-gray-600');
+contextModeToggle.querySelector('span:last-of-type').classList.add('bg-white', 'text-primary');
+// Start context detection
+startContextListening();
+// Show the context info chips
+document.getElementById('activeContextInfo').style.opacity = '1';
+} else {
+contextModeToggle.classList.remove('bg-primary', 'text-white');
+contextModeToggle.classList.add('bg-gray-100', 'text-gray-700');
+contextModeToggle.querySelector('i').classList.replace('ri-radar-line', 'ri-brain-line');
+contextModeToggle.querySelector('span:first-of-type').textContent = 'Smart Context';
+contextModeToggle.querySelector('span:last-of-type').textContent = 'OFF';
+contextModeToggle.querySelector('span:last-of-type').classList.remove('bg-white', 'text-primary');
+contextModeToggle.querySelector('span:last-of-type').classList.add('bg-gray-200', 'text-gray-600');
+// Stop context detection
+stopContextListening();
+// Hide the context info chips
+document.getElementById('activeContextInfo').style.opacity = '0';
+}
+showFeedbackToast(contextModeEnabled ? 'Smart Context Enabled: Suggestions adapt to your environment' : 'Smart Context Disabled: Manual category selection');
+});
+// Manual override button
+const manualOverrideBtn = document.getElementById('manualOverrideBtn');
+const manualOverrideModal = document.getElementById('manualOverrideModal');
+const closeOverrideModal = document.getElementById('closeOverrideModal');
+if (closeOverrideModal) {
+  closeOverrideModal.addEventListener('click', () => {
+    manualOverrideModal.classList.add('hidden');
+  });
+} else {
+  console.warn('Element #closeOverrideModal not found.');
+}
+const cancelOverride = document.getElementById('cancelOverride');
+const saveOverride = document.getElementById('saveOverride');
+const timeContextOverride = document.getElementById('timeContextOverride');
+const locationContextOverride = document.getElementById('locationContextOverride');
+const dayContextOverride = document.getElementById('dayContextOverride');
+manualOverrideBtn.addEventListener('click', async () => {
+if (contextModeEnabled) {
+// Get current context values
+const contextInfo = await detectContext();
+timeContextOverride.value = contextInfo.timeContext;
+locationContextOverride.value = contextInfo.location;
+dayContextOverride.value = contextInfo.dayContext;
+manualOverrideModal.classList.remove('hidden');
+}
+});
+closeOverrideModal.addEventListener('click', () => {
+manualOverrideModal.classList.add('hidden');
+});
+cancelOverride.addEventListener('click', () => {
+manualOverrideModal.classList.add('hidden');
+});
+saveOverride.addEventListener('click', () => {
+// Get the selected values
+const timeContext = timeContextOverride.value;
+const locationContext = locationContextOverride.value;
+const dayContext = dayContextOverride.value;
+// Update the context chips
+document.getElementById('timeContext').textContent = timeContext;
+document.getElementById('locationContext').textContent = locationContext;
+document.getElementById('dayContext').textContent = dayContext;
+// Update the context in the listening overlay
+document.getElementById('currentTimeContext').textContent = timeContext;
+document.getElementById('currentLocationContext').textContent = locationContext;
+document.getElementById('currentDayContext').textContent = dayContext;
+// Show feedback
+showFeedbackToast(`Context manually set to: ${timeContext} | ${locationContext} | ${dayContext}`);
+// Close the modal
+manualOverrideModal.classList.add('hidden');
+});
+// Voice settings
+maleVoiceBtn.addEventListener('click', () => {
+selectedVoiceGender = 'male';
+maleVoiceBtn.classList.remove('bg-gray-100', 'text-gray-700');
+maleVoiceBtn.classList.add('bg-primary', 'text-white');
+femaleVoiceBtn.classList.remove('bg-primary', 'text-white');
+femaleVoiceBtn.classList.add('bg-gray-100', 'text-gray-700');
+showFeedbackToast('Male voice selected');
+});
+femaleVoiceBtn.addEventListener('click', () => {
+selectedVoiceGender = 'female';
+femaleVoiceBtn.classList.remove('bg-gray-100', 'text-gray-700');
+femaleVoiceBtn.classList.add('bg-primary', 'text-white');
+maleVoiceBtn.classList.remove('bg-primary', 'text-white');
+maleVoiceBtn.classList.add('bg-gray-100', 'text-gray-700');
+showFeedbackToast('Female voice selected');
+});
+voiceSpeed.addEventListener('input', () => {
+voiceRate = parseFloat(voiceSpeed.value);
+});
+voicePitch.addEventListener('input', () => {
+voicePitch = parseFloat(voicePitch.value);
+});
+// Language settings
+languageSelector.addEventListener('click', () => {
+languageDropdown.classList.toggle('hidden');
+});
+document.addEventListener('click', (e) => {
+if (!languageSelector.contains(e.target) && !languageDropdown.contains(e.target)) {
+languageDropdown.classList.add('hidden');
+}
+});
+languageOptions.forEach(option => {
+option.addEventListener('click', () => {
+const lang = option.dataset.lang;
+currentLanguage = lang;
+document.getElementById('currentLanguage').textContent = option.textContent;
+languageDropdown.classList.add('hidden');
+showFeedbackToast(`Language changed to ${option.textContent}`);
+});
+});
+// Add new phrase functionality
+function updateSavedPhrases() {
+const savedPhrasesContainer = document.querySelector('.space-y-2');
+savedPhrasesContainer.innerHTML = '';
+savedPhrases.forEach(phrase => {
+const button = document.createElement('button');
+button.className = 'w-full px-4 py-2 bg-gray-100 rounded-lg text-left text-sm text-gray-700 hover:bg-gray-200 cursor-pointer';
+button.textContent = phrase;
+button.addEventListener('click', () => {
+outputText.value = phrase;
+profileModal.classList.add('hidden');
+});
+savedPhrasesContainer.appendChild(button);
+});
+}
+addNewPhraseBtn.addEventListener('click', () => {
+newPhraseModal.classList.remove('hidden');
+newPhraseText.focus();
+});
+closeNewPhraseModal.addEventListener('click', () => {
+newPhraseModal.classList.add('hidden');
+});
+cancelNewPhrase.addEventListener('click', () => {
+newPhraseModal.classList.add('hidden');
+});
+saveNewPhrase.addEventListener('click', () => {
+const phraseText = newPhraseText.value.trim();
+if (phraseText) {
+savedPhrases.push(phraseText);
+updateSavedPhrases();
+newPhraseText.value = '';
+newPhraseModal.classList.add('hidden');
+showFeedbackToast('New phrase added');
+} else {
+showFeedbackToast('Please enter a phrase');
+}
+});
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+// Press Enter when focused on a button to click it
+if (e.key === 'Enter' && document.activeElement.tagName === 'BUTTON') {
+document.activeElement.click();
+}
+// Press Escape to close modals and stop listening
+if (e.key === 'Escape') {
+settingsModal.classList.add('hidden');
+profileModal.classList.add('hidden');
+historyFilterDropdown.classList.add('hidden');
+languageDropdown.classList.add('hidden');
+newPhraseModal.classList.add('hidden');
+feedbackToast.classList.remove('show');
+// Also stop listening if active
+if (isRecording) {
+stopListening();
+}
+}
+// Ctrl+M to toggle mic
+if (e.ctrlKey && e.key === 'm') {
+e.preventDefault();
+micBtn.click();
+}
+// Ctrl+S to speak
+if (e.ctrlKey && e.key === 's') {
+e.preventDefault();
+speakBtn.click();
+}
+// Ctrl+L to clear
+if (e.ctrlKey && e.key === 'l') {
+e.preventDefault();
+clearBtn.click();
+}
+// Space to start/stop listening when overlay is active
+if (e.key === ' ' && listeningOverlay.classList.contains('active')) {
+e.preventDefault();
+stopListening();
+}
+});
+// Initialize saved phrases
+updateSavedPhrases();
 });

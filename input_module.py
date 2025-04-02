@@ -18,7 +18,6 @@ from collections import deque
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from stub_models import StubWhisperModel
 
 
 
@@ -411,4 +410,3 @@ if __name__ == "__main__":
     speech_result = input_module.process_input(input_type="speech", duration=5)
     print("\nSpeech Input Result:")
     print(json.dumps(speech_result, indent=2))
-
