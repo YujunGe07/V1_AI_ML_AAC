@@ -176,6 +176,11 @@ transition: background-color 0.2s ease;
 background-color: rgba(142, 111, 247, 0.1);
 }
 
+.listening-indicator {
+  cursor: pointer;
+}
+
+
 /* Dark mode styles */
 /* Dark mode styles */
 .dark {
@@ -351,31 +356,59 @@ transition: all 0.1s ease;
 </style>
 </head>
 <body class="bg-gray-50 font-inter min-h-screen text-gray-900 transition-colors duration-300">
-<div id="root" class="min-h-screen">
 <div id="listeningOverlay" class="listening-overlay">
-<div class="listening-indicator">
+
+    <!-- Mic Button -->
+    <div class="listening-indicator cursor-pointer">
 <i class="ri-mic-line ri-3x text-white"></i>
 </div>
+  
+    <!-- Status -->
 <div class="listening-status">Listening...</div>
-<p class="text-white text-center mt-4 max-w-md px-4">Speak clearly and I'll help you communicate</p>
-<div id="context-display" class="p-4 rounded-lg bg-gray-50 dark:bg-gray-800">
-    <div class="context-info">
-        <div class="context-label">
-            <strong>Context:</strong> <span id="context-label">Loading...</span>
-            <span id="context-confidence" class="confidence"></span>
-        </div>
-        <div class="context-details">
-            <div class="time-location">
-                <span id="time-of-day">...</span>
-                <span id="day-type">...</span>
-                <span id="location">...</span>
-            </div>
-            <div class="additional-context">
-                <span id="activity">...</span>
-                <span id="formality">...</span>
-            </div>
-        </div>
+    <p class="text-white text-center mt-4 max-w-md px-4">
+      Speak clearly and I'll help you communicate
+    </p>
+  
+    <!-- Context Info -->
+    <div id="context-display" class="mt-4 text-white text-sm text-center space-y-1">
+      <div>
+        <strong>Context:</strong>
+        <span id="context-label">Loading...</span>
 </div>
+      <div id="context-details" class="flex justify-center space-x-2 text-sm opacity-90">
+        <span id="time-of-day">...</span>
+        <span>|</span>
+        <span id="day-type">...</span>
+        <span>|</span>
+        <span id="location">...</span>
+      </div>
+    </div>
+  
+    <!-- Live Transcript -->
+    <div class="mt-6 max-w-xl w-full px-6">
+      <div class="bg-gray-800/90 rounded-xl p-4 shadow-lg backdrop-blur-sm">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-sm font-semibold text-white/90">Live Transcript</p>
+          <div class="flex items-center gap-1 text-gray-400 text-xs">
+            <i class="ri-mic-line"></i>
+            <span>Speech-to-Text</span>
+          </div>
+        </div>
+        <div id="overlayTranscript" class="text-white text-base max-h-40 overflow-y-auto whitespace-pre-line font-medium leading-relaxed tracking-tight"></div>
+      </div>
+    </div>
+    
+  
+    <!-- Done Button -->
+    <div class="mt-6 flex justify-center">
+      <button id="doneListening" class="px-6 py-2 rounded-2xl backdrop-blur-md bg-white/10 border border-white/20 text-white font-medium hover:bg-white/20 transition duration-300 shadow-lg">
+        Done
+      </button>
+    </div>
+  
+  </div>
+  
+
 </div>
 <button id="cancelListening" class="mt-8 px-6 py-2 bg-white text-primary rounded-full font-medium hover:bg-gray-100 transition-all duration-300 !rounded-button">
 Cancel
@@ -482,7 +515,7 @@ Suggestions are based on your environment. Turn off Smart Context to choose manu
     <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Live Transcript</p>
     <div id="liveTranscript" class="text-gray-700 dark:text-gray-200 text-base whitespace-pre-line">
       <!-- Transcript will show here -->
-    </div>
+</div>
   </div>
 
   <!-- Right: User Input Area -->
@@ -709,11 +742,11 @@ Add New Phrase
             <div>
               <label for="dayContextOverride" class="block text-sm font-medium text-gray-700">Day Type</label>
               <input id="dayContextOverride" class="w-full border rounded px-3 py-2" placeholder="e.g. Weekday">
-            </div>
+</div>
             <div class="flex justify-end space-x-3 pt-4">
               <button id="cancelOverride" class="px-4 py-2 bg-gray-100 text-gray-700 rounded">Cancel</button>
               <button id="saveOverride" class="px-4 py-2 bg-primary text-white rounded">Save</button>
-            </div>
+</div>
           </div>
         </div>
       </div>

@@ -50,20 +50,21 @@ def after_request(response):
 
 
 
-@app.route('/transcribe', methods=['POST'])
+@app.route('/transcribe-audio', methods=['POST'])
 def transcribe_audio():
     if 'audio' not in request.files:
         return jsonify({'error': 'No audio file uploaded'}), 400
 
     file = request.files['audio']
-
-    # Save temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp:
         file.save(temp.name)
         input_module = InputModule()
         result = input_module.process_speech(temp.name)
-    
+
+    print("📥 Audio received:", file.filename)
+    print("📝 Transcription result:", result)
     return jsonify(result)
+
 
 @app.route("/update-context", methods=["POST"])
 def update_context():

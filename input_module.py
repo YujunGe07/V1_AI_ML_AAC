@@ -347,8 +347,10 @@ class InputModule:
                 "timestamp": datetime.now().isoformat(),
                 "error": error
             },
-            "environment": self.get_environment_data()
-        }
+            "environment": self.get_environment_data(),
+            "transcript": text  # ✅ ADD THIS
+    }
+
 
     def process_input(self, input_type: str = "text", **kwargs) -> Dict:
         """

@@ -118,14 +118,48 @@ class SpeechService {
         this.recognition = null;
         this.synthesis = window.speechSynthesis;
         this.voices = [];
+        this.isListening = false;
 
+        // Initialize speech recognition
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (SpeechRecognition) {
             this.recognition = new SpeechRecognition();
             this.recognition.continuous = true;
             this.recognition.interimResults = true;
+            this.recognition.lang = currentLanguage || 'en-US';
+
+            // Set up event handlers
+            this.recognition.onresult = (event) => {
+                const transcript = Array.from(event.results)
+                    .map(result => result[0].transcript)
+                    .join('');
+                
+                // Update both transcript displays
+                const liveTranscript = document.getElementById('liveTranscript');
+                const overlayTranscript = document.getElementById('overlayTranscript');
+                
+                if (liveTranscript) liveTranscript.textContent = transcript;
+                if (overlayTranscript) overlayTranscript.textContent = transcript;
+                
+                // Update output text if it's a final result
+                if (event.results[event.results.length - 1].isFinal) {
+                    const outputText = document.getElementById('outputText');
+                    if (outputText) outputText.value = transcript;
+                }
+            };
+
+            this.recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                showFeedbackToast(`Speech recognition error: ${event.error}`);
+                this.isListening = false;
+            };
+
+            this.recognition.onend = () => {
+                this.isListening = false;
+            };
         }
 
+        // Initialize speech synthesis voices
         if (this.synthesis) {
             this.synthesis.onvoiceschanged = () => {
                 this.voices = this.synthesis.getVoices();
@@ -134,21 +168,34 @@ class SpeechService {
         }
     }
 
-    startListening(onResult, onError) {
+    startListening() {
         if (!this.recognition) {
-            onError?.('Speech recognition not supported.');
-            return;
+            showFeedbackToast('Speech recognition not supported in your browser');
+            return false;
         }
-        this.recognition.onresult = (e) => {
-            const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
-            onResult?.(transcript);
-        };
-        this.recognition.onerror = (e) => onError?.(e.error);
-        this.recognition.start();
+
+        if (this.isListening) {
+            console.log('Speech recognition is already running');
+            return true;
+        }
+
+        try {
+            this.recognition.start();
+            this.isListening = true;
+            return true;
+        } catch (error) {
+            console.error('Error starting speech recognition:', error);
+            showFeedbackToast('Failed to start speech recognition');
+            this.isListening = false;
+            return false;
+        }
     }
 
     stopListening() {
-        if (this.recognition) this.recognition.stop();
+        if (this.recognition) {
+            this.isListening = false;
+            this.recognition.stop();
+        }
     }
 }
 
@@ -194,7 +241,10 @@ class AudioRecorder {
 
         const liveTranscriptBox = document.getElementById('liveTranscript');
         if (liveTranscriptBox) {
-          liveTranscriptBox.textContent = transcript;
+          if (liveTranscriptBox) liveTranscriptBox.textContent = transcript;
+          const overlayTranscript = document.getElementById('overlayTranscript');
+          if (overlayTranscript) overlayTranscript.textContent = transcript;
+
         }
 
     }
@@ -205,6 +255,7 @@ class AACInterface {
     constructor() {
         this.contextService = new ContextDetectionService();
         this.recorder = new AudioRecorder();
+        this.speechService = new SpeechService();
 
         this.inputField = document.getElementById('user-input');
         this.outputText = document.getElementById('outputText');
@@ -635,65 +686,58 @@ document.getElementById('micTooltip').style.opacity = '0';
 });
 const listeningOverlay = document.getElementById('listeningOverlay');
 const cancelListening = document.getElementById('cancelListening');
+document.querySelector('.listening-indicator')?.addEventListener('click', stopListening);
+document.getElementById('doneListening')?.addEventListener('click', stopListening);
 cancelListening.addEventListener('click', () => {
 stopListening();
 });
 async function startListening() {
-isRecording = true;
-micBtn.classList.add('mic-recording');
-micBtn.querySelector('i').classList.replace('ri-mic-line', 'ri-mic-fill');
-// Show the full-screen overlay
-listeningOverlay.classList.add('active');
-// Show context indicator if context mode is enabled
-const contextIndicator = document.getElementById('contextIndicator');
-const currentContextDisplay = document.getElementById('currentContextDisplay');
-if (contextModeEnabled) {
-const contextInfo = await detectContext();
-currentContextDisplay.textContent = contextInfo.activity;
-contextIndicator.style.opacity = '1';
-} else {
-contextIndicator.style.opacity = '0';
-}
-// Simulate speech recognition after 3 seconds
-setTimeout(async () => {
-  if (isRecording) {
-    let recognizedPhrase;
-    if (contextModeEnabled) {
-      const contextInfo = await detectContext();
-      recognizedPhrase = contextInfo.suggestions[Math.floor(Math.random() * contextInfo.suggestions.length)];
-    } else {
-      recognizedPhrase = phraseSuggestions[currentCategory][Math.floor(Math.random() * phraseSuggestions[currentCategory].length)];
+    if (!window.aacInterface?.speechService) {
+        window.aacInterface = new AACInterface();
     }
-    outputText.value = recognizedPhrase;
-    showFeedbackToast('Speech recognized');
-    stopListening();
-  }
-}, 3000);
 
+    if (isRecording) {
+        console.log('Already recording, ignoring start request');
+        return;
+    }
+
+    isRecording = true;
+    micBtn.classList.add('mic-recording');
+    micBtn.querySelector('i').classList.replace('ri-mic-line', 'ri-mic-fill');
+    listeningOverlay.classList.add('active');
+
+    // Start real speech recognition
+    const success = window.aacInterface.speechService.startListening();
+    if (success) {
+        showFeedbackToast('Listening...');
+    }
 }
+
 function stopListening() {
-isRecording = false;
-micBtn.classList.remove('mic-recording');
-micBtn.querySelector('i').classList.replace('ri-mic-fill', 'ri-mic-line');
-listeningOverlay.classList.remove('active');
-// If context mode is enabled, schedule next auto-listening
-if (contextModeEnabled) {
-// Random time between 30-90 seconds for next auto-listening
-const nextListeningTime = 30000 + Math.random() * 60000;
-setTimeout(() => {
-if (contextModeEnabled && Math.random() > 0.7) {
-// 30% chance of auto-listening
-startListening();
+    if (!isRecording) {
+        console.log('Not recording, ignoring stop request');
+        return;
+    }
+
+    isRecording = false;
+    micBtn.classList.remove('mic-recording');
+    micBtn.querySelector('i').classList.replace('ri-mic-fill', 'ri-mic-line');
+    listeningOverlay.classList.remove('active');
+
+    if (window.aacInterface?.speechService) {
+        window.aacInterface.speechService.stopListening();
+    }
+
+    const overlayTranscript = document.getElementById('overlayTranscript');
+    if (overlayTranscript) overlayTranscript.textContent = '';
 }
-}, nextListeningTime);
-}
-}
+
 micBtn.addEventListener('click', () => {
-if(!isRecording) {
-startListening();
-} else {
-stopListening();
-}
+    if (!isRecording) {
+        startListening();
+    } else {
+        stopListening();
+    }
 });
 darkModeToggle.addEventListener('click', () => {
 document.documentElement.classList.toggle('dark');
@@ -956,10 +1000,13 @@ document.getElementById('contextTooltip').classList.add('hidden');
 });
 // Initialize context mode (enabled by default)
 function initContextMode() {
-if (contextModeEnabled) {
-startContextListening();
-document.getElementById('activeContextInfo').style.opacity = '1';
-}
+    if (contextModeEnabled) {
+        // Only update context display, don't start listening
+        detectContext().then(contextInfo => {
+            updateContextDisplay(contextInfo);
+        });
+        document.getElementById('activeContextInfo').style.opacity = '1';
+    }
 }
 // Call this after DOM is loaded
 initContextMode();
