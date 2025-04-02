@@ -17,11 +17,19 @@ function updateSpeakButtonState(isSpeaking) {
     if (speakBtn) {
         if (isSpeaking) {
             speakBtn.classList.add('speaking');
-            speakBtn.innerHTML = '<i class="ri-volume-up-fill"></i>';
+            speakBtn.innerHTML = `
+                <i class="ri-volume-up-fill"></i>
+                <span class="action-button-label">Speaking...</span>
+                <div class="absolute bottom-0 left-0 w-full h-1 bg-white opacity-20 speaking-indicator"></div>
+            `;
             speakBtn.disabled = true;
         } else {
             speakBtn.classList.remove('speaking');
-            speakBtn.innerHTML = '<i class="ri-volume-up-line"></i>';
+            speakBtn.innerHTML = `
+                <i class="ri-volume-up-line"></i>
+                <span class="action-button-label">Speak</span>
+                <div class="absolute bottom-0 left-0 w-full h-1 bg-white opacity-20 speaking-indicator"></div>
+            `;
             speakBtn.disabled = false;
         }
     }
@@ -181,7 +189,14 @@ class AudioRecorder {
             body: formData
         });
         const data = await response.json();
-        document.getElementById('outputText').value = data.transcript || '';
+        const transcript = data.transcript || '';
+        document.getElementById('outputText').value = transcript;
+
+        const liveTranscriptBox = document.getElementById('liveTranscript');
+        if (liveTranscriptBox) {
+          liveTranscriptBox.textContent = transcript;
+        }
+
     }
 }
 
@@ -695,6 +710,14 @@ darkModeToggle.classList.remove('bg-primary', 'text-white');
 darkModeToggle.classList.add('bg-gray-100', 'text-gray-600');
 // Save preference to localStorage
 localStorage.setItem('darkMode', 'disabled');
+}
+
+// Update toolbar theme
+const actionToolbar = document.querySelector('.action-toolbar');
+if (document.documentElement.classList.contains('dark')) {
+    actionToolbar.classList.add('dark');
+} else {
+    actionToolbar.classList.remove('dark');
 }
 });
 // Check for saved dark mode preference

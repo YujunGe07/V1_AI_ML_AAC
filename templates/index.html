@@ -283,6 +283,71 @@ button:active {
 transform: translateY(0);
 transition: all 0.1s ease;
 }
+.action-toolbar {
+    position: fixed;  /* Change from sticky to fixed */
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    width: 90%;
+    max-width: 600px;
+    padding: 1rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    box-shadow: 
+        0 4px 6px -1px rgba(0, 0, 0, 0.1),
+        0 2px 4px -1px rgba(0, 0, 0, 0.06),
+        0 0 0 1px rgba(0, 0, 0, 0.05);
+    transition: all 0.3s ease;
+}
+
+.dark .action-toolbar {
+    background: rgba(31, 41, 55, 0.95);
+    box-shadow: 
+        0 4px 6px -1px rgba(0, 0, 0, 0.3),
+        0 2px 4px -1px rgba(0, 0, 0, 0.2),
+        0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Add hover effect to make it more prominent */
+.action-toolbar:hover {
+    transform: translateX(-50%) translateY(-2px);
+    box-shadow: 
+        0 8px 12px -1px rgba(0, 0, 0, 0.15),
+        0 4px 6px -1px rgba(0, 0, 0, 0.1),
+        0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+/* Ensure buttons in the toolbar are properly styled */
+.action-toolbar button {
+    flex: 1;
+    min-width: 0;
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+    background: white;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.dark .action-toolbar button {
+    background: rgba(55, 65, 81, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Add margin to the bottom of the content to prevent toolbar overlap */
+.main-content {
+    margin-bottom: 6rem;
+}
 </style>
 </head>
 <body class="bg-gray-50 font-inter min-h-screen text-gray-900 transition-colors duration-300">
@@ -310,7 +375,7 @@ transition: all 0.1s ease;
                 <span id="formality">...</span>
             </div>
         </div>
-    </div>
+</div>
 </div>
 <button id="cancelListening" class="mt-8 px-6 py-2 bg-white text-primary rounded-full font-medium hover:bg-gray-100 transition-all duration-300 !rounded-button">
 Cancel
@@ -411,29 +476,28 @@ Suggestions are based on your environment. Turn off Smart Context to choose manu
 </button>
 </div>
 </div>
-<div class="bg-gray-100 rounded-lg p-6 mb-8 min-h-[150px] shadow-sm transition-all duration-300" id="outputArea">
-<textarea class="w-full bg-transparent border-none outline-none resize-none text-xl text-gray-800 min-h-[120px] placeholder-gray-400 keyboard-focus" id="outputText" placeholder="Type what you want to say..." tabindex="0" aria-label="Text output area"></textarea>
+<div class="flex gap-4 mb-8">
+  <!-- Left: Transcript Display -->
+  <div class="w-1/2 bg-gray-100 dark:bg-gray-800 rounded-lg p-4 shadow-sm min-h-[150px]">
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Live Transcript</p>
+    <div id="liveTranscript" class="text-gray-700 dark:text-gray-200 text-base whitespace-pre-line">
+      <!-- Transcript will show here -->
+    </div>
+  </div>
+
+  <!-- Right: User Input Area -->
+  <div class="w-1/2 bg-gray-100 dark:bg-gray-800 rounded-lg p-4 shadow-sm" id="outputArea">
+    <textarea class="w-full bg-transparent border-none outline-none resize-none text-xl text-gray-800 dark:text-gray-200 min-h-[120px] placeholder-gray-400 keyboard-focus" id="outputText" placeholder="Type what you want to say..." tabindex="0" aria-label="Text output area"></textarea>
+  </div>
 </div>
+
+
 <div class="flex items-center space-x-4 mb-8 overflow-x-auto py-4 hide-scrollbar" id="suggestions" style="scroll-behavior: smooth; -webkit-overflow-scrolling: touch;">
 <button class="suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-30 cursor-pointer transition-all duration-300 keyboard-focus" data-category="all" tabindex="0">How are you?</button>
 <button class="suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-30 cursor-pointer transition-all duration-300 keyboard-focus" data-category="all" tabindex="0">I need help</button>
 <button class="suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-30 cursor-pointer transition-all duration-300 keyboard-focus" data-category="all" tabindex="0">Thank you</button>
 <button class="suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-30 cursor-pointer transition-all duration-300 keyboard-focus" data-category="all" tabindex="0">Yes, please</button>
 <button class="suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-30 cursor-pointer transition-all duration-300 keyboard-focus" data-category="all" tabindex="0">No, thanks</button>
-</div>
-<div class="grid grid-cols-3 gap-6 mb-10">
-<button class="quick-category p-6 bg-white border border-gray-200 rounded-lg text-center hover:border-primary hover:shadow-md cursor-pointer transition-all duration-300 keyboard-focus" data-category="emotions" tabindex="0" aria-label="Feelings category">
-<i class="ri-emotion-happy-line ri-2x mb-4 text-primary"></i>
-<p class="text-sm font-medium text-gray-700">Feelings</p>
-</button>
-<button class="quick-category p-6 bg-white border border-gray-200 rounded-lg text-center hover:border-primary hover:shadow-md cursor-pointer transition-all duration-300 keyboard-focus" data-category="food" tabindex="0" aria-label="Food and drink category">
-<i class="ri-restaurant-line ri-2x mb-4 text-primary"></i>
-<p class="text-sm font-medium text-gray-700">Food & Drink</p>
-</button>
-<button class="quick-category p-6 bg-white border border-gray-200 rounded-lg text-center hover:border-primary hover:shadow-md cursor-pointer transition-all duration-300 keyboard-focus" data-category="home" tabindex="0" aria-label="Daily needs category">
-<i class="ri-home-line ri-2x mb-4 text-primary"></i>
-<p class="text-sm font-medium text-gray-700">Daily Needs</p>
-</button>
 </div>
 <div class="flex items-center justify-between">
 <button id="clearBtn" class="w-14 h-14 flex items-center justify-center text-gray-600 hover:text-primary bg-gray-100 rounded-full cursor-pointer transition-all duration-300 hover:shadow-md keyboard-focus" tabindex="0" aria-label="Clear text">
@@ -634,14 +698,14 @@ Add New Phrase
             </button>
           </div>
           <div class="space-y-4">
-            <div>
+<div>
               <label for="timeContextOverride" class="block text-sm font-medium text-gray-700">Time of Day</label>
               <input id="timeContextOverride" class="w-full border rounded px-3 py-2" placeholder="e.g. Morning">
-            </div>
+</div>
             <div>
               <label for="locationContextOverride" class="block text-sm font-medium text-gray-700">Location</label>
               <input id="locationContextOverride" class="w-full border rounded px-3 py-2" placeholder="e.g. Home">
-            </div>
+</div>
             <div>
               <label for="dayContextOverride" class="block text-sm font-medium text-gray-700">Day Type</label>
               <input id="dayContextOverride" class="w-full border rounded px-3 py-2" placeholder="e.g. Weekday">
