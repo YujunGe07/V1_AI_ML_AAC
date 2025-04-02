@@ -1,5 +1,5 @@
 // === Constants ===
-const API_URL = 'http://localhost:5001';
+const API_URL = 'http://127.0.0.1:5001';
 const ENDPOINTS = {
     process: `${API_URL}/process`,
     config: `${API_URL}/config`,
@@ -9,8 +9,74 @@ const ENDPOINTS = {
 let isRecording = false;
 let currentLanguage = 'en-US';
 let selectedVoiceGender = 'male';
-let voiceRate = 1.0;
-let voicePitch = 1.0;
+let ttsVoicePitch = 1.0;
+let ttsVoiceRate = 1.0;
+
+
+function ensureVoicesLoaded() {
+    return new Promise((resolve) => {
+      let voices = speechSynthesis.getVoices();
+      if (voices.length) return resolve(voices);
+  
+      speechSynthesis.onvoiceschanged = () => {
+        voices = speechSynthesis.getVoices();
+        resolve(voices);
+      };
+    });
+  }
+
+  async function speakTextBackend(text) {
+    if (!text) return false;
+
+    try {
+        const response = await fetch("http://127.0.0.1:5001/speak", {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              text,
+              voice: selectedVoiceGender
+          })
+          
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Server error: ${response.status}`);
+        }
+
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        
+        return new Promise((resolve) => {
+            audio.onerror = (e) => {
+                console.error("Audio playback error:", e);
+                showFeedbackToast("Error playing audio");
+                URL.revokeObjectURL(audioUrl);
+                resolve(false);
+            };
+            
+            audio.onended = () => {
+                URL.revokeObjectURL(audioUrl);
+                resolve(true);
+            };
+            
+            updateSpeakButtonState(true);
+            audio.play();
+        });
+        
+    } catch (error) {
+        console.error("TTS Error:", error);
+        showFeedbackToast(error.message || "Error generating speech");
+        return false;
+    } finally {
+        updateSpeakButtonState(false);
+    }
+}
+  
+  
 
 // === Context Detection ===
 class ContextDetectionService {
@@ -115,22 +181,6 @@ class SpeechService {
     stopListening() {
         if (this.recognition) this.recognition.stop();
     }
-
-    speak(text, options = {}, onEnd = null) {
-        if (!text || !this.synthesis) return;
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.pitch = Number.isFinite(voicePitch) ? voicePitch : 1.0;
-        utterance.rate = Number.isFinite(voiceRate) ? voiceRate : 1.0;
-        utterance.volume = 1.0;
-        utterance.lang = currentLanguage;
-
-        const match = this.voices.find(v => v.lang.includes(currentLanguage));
-        if (match) utterance.voice = match;
-        if (onEnd) utterance.onend = onEnd;
-
-        this.synthesis.cancel();
-        this.synthesis.speak(utterance);
-    }
 }
 
 // === Audio Recorder ===
@@ -174,11 +224,31 @@ class AudioRecorder {
     }
 }
 
+function updateSpeakButtonState(isSpeaking) {
+    const speakingText = speakBtn.querySelector('.speaking-text');
+    const speakingIndicator = speakBtn.querySelector('.speaking-indicator');
+    if (isSpeaking) {
+      speakBtn.classList.add('speak-active');
+      speakingText.textContent = 'Speaking';
+      speakingIndicator.classList.remove('hidden');
+    } else {
+      speakBtn.classList.remove('speak-active');
+      speakingText.textContent = 'Speak';
+      speakingIndicator.classList.add('hidden');
+    }
+  }
+  
+
+  let currentUtterance = null;
+
+  async function speakText(text) {
+    await speakTextBackend(text);
+  }
+
 // === AAC Interface ===
 class AACInterface {
     constructor() {
         this.contextService = new ContextDetectionService();
-        this.speechService = new SpeechService();
         this.recorder = new AudioRecorder();
 
         this.inputField = document.getElementById('user-input');
@@ -193,8 +263,12 @@ class AACInterface {
 
     bindEvents() {
         this.speakBtn?.addEventListener('click', () => {
-            const text = this.outputText?.value.trim() || this.inputField?.value.trim();
-            if (text) this.speakText(text);
+            const text = this.outputText?.value?.trim();
+            if (text) {
+                this.speakText(text);
+            } else {
+                showFeedbackToast('No text to speak');
+            }
         });
 
         this.micBtn?.addEventListener('click', () => {
@@ -222,9 +296,62 @@ class AACInterface {
     }
 
     speakText(text) {
-        this.speechService.speak(text, {}, () => {
-            this.speakBtn.disabled = false;
-        });
+        try {
+            // Cancel any ongoing speech
+            window.speechSynthesis.cancel();
+
+            // Get text from output area if not provided
+            if (!text) {
+                text = this.outputText?.value?.trim();
+            }
+
+            if (!text) {
+                showFeedbackToast('No text to speak');
+                return;
+            }
+
+            // Create utterance
+            const utterance = new SpeechSynthesisUtterance(text);
+
+            // Set default properties
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            utterance.lang = 'en-US';
+
+            // Handle events
+            utterance.onstart = () => {
+                if (this.speakBtn) {
+                    this.speakBtn.disabled = true;
+                }
+                showFeedbackToast('Speaking...');
+            };
+
+            utterance.onend = () => {
+                if (this.speakBtn) {
+                    this.speakBtn.disabled = false;
+                }
+                showFeedbackToast('Finished speaking');
+            };
+
+            utterance.onerror = (event) => {
+                console.error('Speech error:', event);
+                if (this.speakBtn) {
+                    this.speakBtn.disabled = false;
+                }
+                showFeedbackToast('Error while speaking');
+            };
+
+            // Speak
+            window.speechSynthesis.speak(utterance);
+
+        } catch (error) {
+            console.error('TTS Error:', error);
+            showFeedbackToast('Failed to speak text');
+            if (this.speakBtn) {
+                this.speakBtn.disabled = false;
+            }
+        }
     }
 }
 
@@ -435,8 +562,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 document.addEventListener('DOMContentLoaded', () => {
-updateHistory();
-initVoices();
+    updateHistory();
+    ensureVoicesLoaded().then((voices) => {
+      console.log("✅ Voices loaded:", voices.length);
+    });
+    
 const settingsBtn = document.getElementById('settingsBtn');
 const profileBtn = document.getElementById('profileBtn');
 const settingsModal = document.getElementById('settingsModal');
@@ -650,71 +780,7 @@ clearBtn.addEventListener('click', () => {
 outputText.value = '';
 showFeedbackToast('Text cleared');
 });
-function speakText(text) {
-if (text) {
-// Cancel any ongoing speech
-window.speechSynthesis.cancel();
-const utterance = new SpeechSynthesisUtterance(text);
-// Set language
-utterance.lang = currentLanguage;
-// Set rate and pitch
-utterance.rate = voiceRate;
-utterance.pitch = voicePitch;
-// Get available voices
-const voices = window.speechSynthesis.getVoices();
-// Filter voices by gender and language
-let filteredVoices = voices.filter(voice =>
-voice.lang.includes(currentLanguage.split('-')[0]) ||
-voice.lang === currentLanguage
-);
-// If no matching voices found, use any available voice
-if (filteredVoices.length === 0) {
-filteredVoices = voices;
-}
-// Try to find a voice matching the selected gender
-let selectedVoice = null;
-if (selectedVoiceGender === 'male') {
-selectedVoice = filteredVoices.find(voice => !voice.name.includes('female') && !voice.name.toLowerCase().includes('girl'));
-} else {
-selectedVoice = filteredVoices.find(voice => voice.name.includes('female') || voice.name.toLowerCase().includes('girl'));
-}
-// If no matching gender voice found, use the first available voice
-if (!selectedVoice && filteredVoices.length > 0) {
-selectedVoice = filteredVoices[0];
-}
-if (selectedVoice) {
-utterance.voice = selectedVoice;
-}
-// Add event listeners for speech events
-utterance.onstart = function() {
-updateSpeakButtonState(true);
-};
-utterance.onend = function() {
-updateSpeakButtonState(false);
-showFeedbackToast('Speaking complete');
-};
-utterance.onerror = function() {
-updateSpeakButtonState(false);
-showFeedbackToast('Error while speaking');
-};
-window.speechSynthesis.speak(utterance);
-return true;
-}
-return false;
-}
-function updateSpeakButtonState(isSpeaking) {
-const speakingText = speakBtn.querySelector('.speaking-text');
-const speakingIndicator = speakBtn.querySelector('.speaking-indicator');
-if (isSpeaking) {
-speakBtn.classList.add('speak-active');
-speakingText.textContent = 'Speaking';
-speakingIndicator.classList.remove('hidden');
-} else {
-speakBtn.classList.remove('speak-active');
-speakingText.textContent = 'Speak';
-speakingIndicator.classList.add('hidden');
-}
-}
+
 speakBtn.addEventListener('click', () => {
 if (outputText.value) {
 const success = speakText(outputText.value);
@@ -1015,11 +1081,12 @@ maleVoiceBtn.classList.add('bg-gray-100', 'text-gray-700');
 showFeedbackToast('Female voice selected');
 });
 voiceSpeed.addEventListener('input', () => {
-voiceRate = parseFloat(voiceSpeed.value);
-});
-voicePitch.addEventListener('input', () => {
-voicePitch = parseFloat(voicePitch.value);
-});
+    ttsVoiceRate = parseFloat(voiceSpeed.value);
+  });
+  voicePitch.addEventListener('input', () => {
+    ttsVoicePitch = parseFloat(voicePitch.value);
+  });
+  
 // Language settings
 languageSelector.addEventListener('click', () => {
 languageDropdown.classList.toggle('hidden');
