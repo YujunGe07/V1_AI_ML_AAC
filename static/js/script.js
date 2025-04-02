@@ -12,6 +12,20 @@ let selectedVoiceGender = 'male';
 let ttsVoicePitch = 1.0;
 let ttsVoiceRate = 1.0;
 
+function updateSpeakButtonState(isSpeaking) {
+    const speakBtn = document.getElementById('speakBtn');
+    if (speakBtn) {
+        if (isSpeaking) {
+            speakBtn.classList.add('speaking');
+            speakBtn.innerHTML = '<i class="ri-volume-up-fill"></i>';
+            speakBtn.disabled = true;
+        } else {
+            speakBtn.classList.remove('speaking');
+            speakBtn.innerHTML = '<i class="ri-volume-up-line"></i>';
+            speakBtn.disabled = false;
+        }
+    }
+}
 
 function ensureVoicesLoaded() {
     return new Promise((resolve) => {
@@ -24,59 +38,6 @@ function ensureVoicesLoaded() {
       };
     });
   }
-
-  async function speakTextBackend(text) {
-    if (!text) return false;
-
-    try {
-        const response = await fetch("http://127.0.0.1:5001/speak", {
-            method: "POST",
-            headers: { 
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              text,
-              voice: selectedVoiceGender
-          })
-          
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || `Server error: ${response.status}`);
-        }
-
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        
-        return new Promise((resolve) => {
-            audio.onerror = (e) => {
-                console.error("Audio playback error:", e);
-                showFeedbackToast("Error playing audio");
-                URL.revokeObjectURL(audioUrl);
-                resolve(false);
-            };
-            
-            audio.onended = () => {
-                URL.revokeObjectURL(audioUrl);
-                resolve(true);
-            };
-            
-            updateSpeakButtonState(true);
-            audio.play();
-        });
-        
-    } catch (error) {
-        console.error("TTS Error:", error);
-        showFeedbackToast(error.message || "Error generating speech");
-        return false;
-    } finally {
-        updateSpeakButtonState(false);
-    }
-}
-  
-  
 
 // === Context Detection ===
 class ContextDetectionService {
@@ -224,27 +185,6 @@ class AudioRecorder {
     }
 }
 
-function updateSpeakButtonState(isSpeaking) {
-    const speakingText = speakBtn.querySelector('.speaking-text');
-    const speakingIndicator = speakBtn.querySelector('.speaking-indicator');
-    if (isSpeaking) {
-      speakBtn.classList.add('speak-active');
-      speakingText.textContent = 'Speaking';
-      speakingIndicator.classList.remove('hidden');
-    } else {
-      speakBtn.classList.remove('speak-active');
-      speakingText.textContent = 'Speak';
-      speakingIndicator.classList.add('hidden');
-    }
-  }
-  
-
-  let currentUtterance = null;
-
-  async function speakText(text) {
-    await speakTextBackend(text);
-  }
-
 // === AAC Interface ===
 class AACInterface {
     constructor() {
@@ -297,7 +237,7 @@ class AACInterface {
 
     speakText(text) {
         try {
-            // Cancel any ongoing speech
+            // Cancel any ongoing speech and clear the queue
             window.speechSynthesis.cancel();
 
             // Get text from output area if not provided
@@ -313,16 +253,27 @@ class AACInterface {
             // Create utterance
             const utterance = new SpeechSynthesisUtterance(text);
 
-            // Set default properties
-            utterance.rate = 1.0;
-            utterance.pitch = 1.0;
+            // Set properties
+            utterance.rate = parseFloat(ttsVoiceRate) || 1.0;
+            utterance.pitch = parseFloat(ttsVoicePitch) || 1.0;
             utterance.volume = 1.0;
-            utterance.lang = 'en-US';
+            utterance.lang = currentLanguage || 'en-US';
+
+            // Get available voices
+            const voices = window.speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                const preferredVoice = voices.find(voice => 
+                    voice.lang.includes(currentLanguage || 'en') && 
+                    voice.name.includes(selectedVoiceGender === 'male' ? 'Male' : 'Female')
+                );
+                utterance.voice = preferredVoice || voices[0];
+            }
 
             // Handle events
             utterance.onstart = () => {
                 if (this.speakBtn) {
                     this.speakBtn.disabled = true;
+                    updateSpeakButtonState(true);
                 }
                 showFeedbackToast('Speaking...');
             };
@@ -330,6 +281,7 @@ class AACInterface {
             utterance.onend = () => {
                 if (this.speakBtn) {
                     this.speakBtn.disabled = false;
+                    updateSpeakButtonState(false);
                 }
                 showFeedbackToast('Finished speaking');
             };
@@ -338,6 +290,7 @@ class AACInterface {
                 console.error('Speech error:', event);
                 if (this.speakBtn) {
                     this.speakBtn.disabled = false;
+                    updateSpeakButtonState(false);
                 }
                 showFeedbackToast('Error while speaking');
             };
@@ -345,12 +298,16 @@ class AACInterface {
             // Speak
             window.speechSynthesis.speak(utterance);
 
+            return true;
+
         } catch (error) {
             console.error('TTS Error:', error);
             showFeedbackToast('Failed to speak text');
             if (this.speakBtn) {
                 this.speakBtn.disabled = false;
+                updateSpeakButtonState(false);
             }
+            return false;
         }
     }
 }
