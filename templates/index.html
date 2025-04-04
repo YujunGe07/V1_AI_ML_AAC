@@ -536,12 +536,12 @@ Suggestions are based on your environment. Turn off Smart Context to choose manu
     <div id="liveTranscript" class="text-gray-700 dark:text-gray-200 text-base whitespace-pre-line">
       <!-- Transcript will show here -->
 </div>
-  </div>
+</div>
 
   <!-- Right: User Input Area -->
   <div class="w-1/2 bg-gray-100 dark:bg-gray-800 rounded-lg p-4 shadow-sm" id="outputArea">
     <textarea class="w-full bg-transparent border-none outline-none resize-none text-xl text-gray-800 dark:text-gray-200 min-h-[120px] placeholder-gray-400 keyboard-focus" id="outputText" placeholder="Type what you want to say..." tabindex="0" aria-label="Text output area"></textarea>
-  </div>
+</div>
 </div>
 
 
@@ -556,13 +556,19 @@ Suggestions are based on your environment. Turn off Smart Context to choose manu
 </div>
 
 <!-- 🤖 AI Suggestions -->
-<div id="aiSuggestionsContainer" class="mb-8">
-  <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-    <i class="ri-robot-2-line text-primary text-base"></i>
-    <span>AI Suggestions</span>
-    <div class="h-px flex-grow bg-border"></div>
-  </div>
-  <div id="dynamicSuggestions" class="flex flex-wrap gap-2"></div>
+<div id="aiSuggestionsContainer" class="bg-white rounded-lg shadow-sm p-6 mb-6">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900 border-l-4 border-primary pl-3">
+            🤖 AI Suggestions
+        </h3>
+    </div>
+    <div id="dynamicSuggestions" class="flex flex-wrap gap-2">
+        <!-- Suggestions will be added here dynamically -->
+    </div>
+    <div id="aiSuggestionsLoader" class="hidden flex items-center space-x-2 p-4">
+        <div class="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
+        <span class="text-sm text-primary">AI is thinking...</span>
+    </div>
 </div>
 
 
@@ -690,28 +696,30 @@ Suggestions are based on your environment. Turn off Smart Context to choose manu
 </div>
 </div>
 </div>
+</div>
+</div>
 </main>
 </div>
 
 <!-- Add this inside your <body> tag, near the end -->
     <div id="manualOverrideModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
-        <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
-          <div class="flex items-center justify-between mb-4">
+<div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+<div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold text-gray-900">Manual Context Override</h3>
             <button id="closeOverrideModal" class="text-gray-600 hover:text-primary">
-              <i class="ri-close-line ri-lg"></i>
-            </button>
-          </div>
-          <div class="space-y-4">
+<i class="ri-close-line ri-lg"></i>
+</button>
+</div>
+<div class="space-y-4">
 <div>
               <label for="timeContextOverride" class="block text-sm font-medium text-gray-700">Time of Day</label>
               <input id="timeContextOverride" class="w-full border rounded px-3 py-2" placeholder="e.g. Morning">
 </div>
-            <div>
+<div>
               <label for="locationContextOverride" class="block text-sm font-medium text-gray-700">Location</label>
               <input id="locationContextOverride" class="w-full border rounded px-3 py-2" placeholder="e.g. Home">
 </div>
-            <div>
+<div>
               <label for="dayContextOverride" class="block text-sm font-medium text-gray-700">Day Type</label>
               <input id="dayContextOverride" class="w-full border rounded px-3 py-2" placeholder="e.g. Weekday">
 </div>
@@ -719,8 +727,8 @@ Suggestions are based on your environment. Turn off Smart Context to choose manu
               <button id="cancelOverride" class="px-4 py-2 bg-gray-100 text-gray-700 rounded">Cancel</button>
               <button id="saveOverride" class="px-4 py-2 bg-primary text-white rounded">Save</button>
 </div>
-          </div>
-        </div>
+</div>
+</div>
       </div>
 
       <script src="/static/js/script.js"></script>

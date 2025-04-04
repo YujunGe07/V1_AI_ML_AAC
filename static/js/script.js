@@ -1324,6 +1324,7 @@ function renderDynamicSuggestions(suggestions) {
         // Add click handler to insert text
         button.addEventListener('click', () => {
             const outputText = document.getElementById('outputText');
+            
             if (outputText) {
                 outputText.value = suggestion;
                 // Optionally speak the suggestion when clicked
