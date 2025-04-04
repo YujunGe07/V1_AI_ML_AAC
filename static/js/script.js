@@ -11,6 +11,7 @@ let currentLanguage = 'en-US';
 let selectedVoiceGender = 'male';
 let ttsVoicePitch = 1.0;
 let ttsVoiceRate = 1.0;
+let isSpeaking = false;
 
 function updateSpeakButtonState(isSpeaking) {
     const speakBtn = document.getElementById('speakBtn');
@@ -137,13 +138,13 @@ class SpeechService {
                 // Update both transcript displays
                 const liveTranscript = document.getElementById('liveTranscript');
                 const overlayTranscript = document.getElementById('overlayTranscript');
+                const outputText = document.getElementById('outputText');
                 
                 if (liveTranscript) liveTranscript.textContent = transcript;
                 if (overlayTranscript) overlayTranscript.textContent = transcript;
                 
                 // Update output text if it's a final result
                 if (event.results[event.results.length - 1].isFinal) {
-                    const outputText = document.getElementById('outputText');
                     if (outputText) outputText.value = transcript;
                 }
             };
@@ -197,6 +198,78 @@ class SpeechService {
             this.recognition.stop();
         }
     }
+
+    speakText(text) {
+        if (isSpeaking) {
+            console.warn("Already speaking, skipping");
+            return false;
+        }
+        isSpeaking = true;
+    
+        try {
+            if (!text) {
+                const outputText = document.getElementById('outputText');
+                text = outputText?.value?.trim();
+            }
+    
+            if (!text) {
+                showFeedbackToast('No text to speak');
+                isSpeaking = false;
+                return false;
+            }
+    
+            fetch(`${API_URL}/speak`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    text: text,
+                    voice: selectedVoiceGender || 'male'
+                })
+            })
+            .then(res => res.blob())
+            .then(blob => {
+                const audioURL = URL.createObjectURL(blob);
+                const audio = new Audio(audioURL);
+    
+                audio.onplay = () => {
+                    updateSpeakButtonState(true);
+                    showFeedbackToast("Speaking...");
+                };
+    
+                audio.onended = () => {
+                    updateSpeakButtonState(false);
+                    isSpeaking = false;
+                    showFeedbackToast("Finished speaking");
+                };
+    
+                audio.onerror = () => {
+                    updateSpeakButtonState(false);
+                    isSpeaking = false;
+                    showFeedbackToast("Error while playing audio");
+                };
+    
+                audio.play();
+            })
+            .catch(err => {
+                console.error("TTS error:", err);
+                updateSpeakButtonState(false);
+                isSpeaking = false;
+                showFeedbackToast("Failed to speak");
+            });
+    
+            return true;
+        } catch (err) {
+            console.error("TTS Exception:", err);
+            updateSpeakButtonState(false);
+            isSpeaking = false;
+            showFeedbackToast("Failed to speak");
+            return false;
+        }
+    }
+    
+    
 }
 
 // === Audio Recorder ===
@@ -263,6 +336,7 @@ class AACInterface {
         this.micBtn = document.getElementById('micBtn');
         this.clearBtn = document.getElementById('clearBtn');
         this.predictionsDiv = document.getElementById('predictions');
+        this.suggestionsContainer = document.getElementById('suggestions');
 
         this.bindEvents();
     }
@@ -271,21 +345,17 @@ class AACInterface {
         this.speakBtn?.addEventListener('click', () => {
             const text = this.outputText?.value?.trim();
             if (text) {
-                this.speakText(text);
+                this.speechService.speakText(text);
             } else {
                 showFeedbackToast('No text to speak');
             }
         });
 
         this.micBtn?.addEventListener('click', () => {
-            if (!this.recorder.isRecording) {
-                this.speechService.startListening(transcript => {
-                    this.inputField.value = transcript;
-                });
-                this.recorder.startRecording();
+            if (!isRecording) {
+                this.startListening();
             } else {
-                this.speechService.stopListening();
-                this.recorder.stopRecording();
+                this.stopListening();
             }
         });
 
@@ -301,86 +371,62 @@ class AACInterface {
         });
     }
 
-    speakText(text) {
-        try {
-            // Cancel any ongoing speech and clear the queue
-            window.speechSynthesis.cancel();
-
-            // Get text from output area if not provided
-            if (!text) {
-                text = this.outputText?.value?.trim();
-            }
-
-            if (!text) {
-                showFeedbackToast('No text to speak');
-                return;
-            }
-
-            // Create utterance
-            const utterance = new SpeechSynthesisUtterance(text);
-
-            // Set properties
-            utterance.rate = parseFloat(ttsVoiceRate) || 1.0;
-            utterance.pitch = parseFloat(ttsVoicePitch) || 1.0;
-            utterance.volume = 1.0;
-            utterance.lang = currentLanguage || 'en-US';
-
-            // Get available voices
-            const voices = window.speechSynthesis.getVoices();
-            if (voices.length > 0) {
-                const preferredVoice = voices.find(voice => 
-                    voice.lang.includes(currentLanguage || 'en') && 
-                    voice.name.includes(selectedVoiceGender === 'male' ? 'Male' : 'Female')
-                );
-                utterance.voice = preferredVoice || voices[0];
-            }
-
-            // Handle events
-            utterance.onstart = () => {
-                if (this.speakBtn) {
-                    this.speakBtn.disabled = true;
-                    updateSpeakButtonState(true);
-                }
-                showFeedbackToast('Speaking...');
-            };
-
-            utterance.onend = () => {
-                if (this.speakBtn) {
-                    this.speakBtn.disabled = false;
-                    updateSpeakButtonState(false);
-                }
-                showFeedbackToast('Finished speaking');
-            };
-
-            utterance.onerror = (event) => {
-                console.error('Speech error:', event);
-                if (this.speakBtn) {
-                    this.speakBtn.disabled = false;
-                    updateSpeakButtonState(false);
-                }
-                showFeedbackToast('Error while speaking');
-            };
-
-            // Speak
-            window.speechSynthesis.speak(utterance);
-
-            return true;
-
-        } catch (error) {
-            console.error('TTS Error:', error);
-            showFeedbackToast('Failed to speak text');
-            if (this.speakBtn) {
-                this.speakBtn.disabled = false;
-                updateSpeakButtonState(false);
-            }
-            return false;
+    async startListening() {
+        if (!window.aacInterface?.speechService) {
+            window.aacInterface = new AACInterface();
         }
+
+        if (isRecording) {
+            console.log('Already recording, ignoring start request');
+            return;
+        }
+
+        isRecording = true;
+        this.micBtn.classList.add('mic-recording');
+        this.micBtn.querySelector('i').classList.replace('ri-mic-line', 'ri-mic-fill');
+        document.getElementById('listeningOverlay').classList.add('active');
+
+        // Start speech recognition
+        const success = this.speechService.startListening();
+        if (success) {
+            showFeedbackToast('Listening...');
+        } else {
+            this.stopListening();
+        }
+    }
+
+    stopListening() {
+        if (!isRecording) {
+            console.log('Not recording, ignoring stop request');
+            return;
+        }
+
+        isRecording = false;
+        this.micBtn.classList.remove('mic-recording');
+        this.micBtn.querySelector('i').classList.replace('ri-mic-fill', 'ri-mic-line');
+        document.getElementById('listeningOverlay').classList.remove('active');
+
+        if (this.speechService) {
+            this.speechService.stopListening();
+        }
+
+        const overlayTranscript = document.getElementById('overlayTranscript');
+        if (overlayTranscript) overlayTranscript.textContent = '';
     }
 }
 
+// Initialize the interface when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.aacInterface = new AACInterface();
     console.log('✅ AACInterface initialized');
+    
+    // Add global speakText function for backward compatibility
+    window.speakText = (text) => {
+        if (window.aacInterface?.speechService) {
+            return window.aacInterface.speechService.speakText(text);
+        }
+        return false;
+    };
 });
 
 async function fetchUserLocationName() {

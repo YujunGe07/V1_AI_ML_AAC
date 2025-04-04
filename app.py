@@ -94,54 +94,44 @@ def speak():
         return response
 
     try:
-        import io, time, os, pyttsx3
+        import time
+        from gtts import gTTS
         from pydub import AudioSegment
         from flask import send_file
+        import io
+        import os
         import tempfile
+        from shutil import which
 
         data = request.get_json()
-        text = data.get("text", "")
-        voice_gender = data.get("voice", "male")
+        text = data.get("text", "").strip()
+        voice_gender = data.get("voice", "male")  # optional, not used by gTTS
+
         if not text:
             return jsonify({"error": "No text provided"}), 400
 
-        # 1. Initialize engine fresh every time
-        engine = pyttsx3.init()
-        voices = engine.getProperty("voices")
-        if voice_gender == "female" and len(voices) > 1:
-            engine.setProperty("voice", voices[1].id)
-        else:
-            engine.setProperty("voice", voices[0].id)
-        engine.setProperty("rate", 150)
+        # Create a temporary mp3 path
+        temp_mp3_path = os.path.join(tempfile.gettempdir(), f"tts_{int(time.time()*1000)}.mp3")
 
-        # 2. Save to guaranteed file path
-        temp_wav_path = os.path.join(tempfile.gettempdir(), f"tts_{int(time.time()*1000)}.wav")
-        engine.save_to_file(text, temp_wav_path)
-        engine.runAndWait()
-        engine.stop()
+        # Generate TTS using gTTS
+        tts = gTTS(text=text, lang="en", slow=False)
+        tts.save(temp_mp3_path)
 
-        # 3. Ensure file is valid
-        for _ in range(10):
-            if os.path.exists(temp_wav_path) and os.path.getsize(temp_wav_path) > 44:
-                break
-            time.sleep(0.1)
-
-        if not os.path.exists(temp_wav_path) or os.path.getsize(temp_wav_path) <= 44:
-            raise ValueError("Generated file is invalid or empty")
-
-        # 4. Convert to standard WAV using ffmpeg (via pydub)
-        audio = AudioSegment.from_file(temp_wav_path, format="wav")
+        # Convert MP3 to WAV using pydub
+        AudioSegment.converter = which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+        audio = AudioSegment.from_file(temp_mp3_path, format="mp3")
         output = io.BytesIO()
         audio.export(output, format="wav")
         output.seek(0)
 
-        os.remove(temp_wav_path)
+        os.remove(temp_mp3_path)
         return send_file(output, mimetype="audio/wav")
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print("❌ TTS ERROR:", e)
-        return jsonify({"error": f"Text-to-speech conversion failed: {str(e)}"}), 500
-
+        return jsonify({"error": f"TTS failed: {str(e)}"}), 500
 
 
     
