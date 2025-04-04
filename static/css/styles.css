@@ -1,0 +1,43 @@
+#dynamicSuggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 16px 0;
+    padding: 8px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.suggestion-btn {
+    background: var(--button-bg, #2c3e50);
+    color: var(--button-text, #ffffff);
+    border: none;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+.suggestion-btn:hover {
+    background: var(--button-hover-bg, #34495e);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.suggestion-btn:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .suggestion-btn {
+        --button-bg: #34495e;
+        --button-hover-bg: #3d5a80;
+    }
+} 

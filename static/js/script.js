@@ -143,9 +143,26 @@ class SpeechService {
                 if (liveTranscript) liveTranscript.textContent = transcript;
                 if (overlayTranscript) overlayTranscript.textContent = transcript;
                 
-                // Update output text if it's a final result
+                // Update output text and fetch suggestions if it's a final result
                 if (event.results[event.results.length - 1].isFinal) {
                     if (outputText) outputText.value = transcript;
+                    
+                    // Show loader
+                    const loader = document.getElementById('aiSuggestionsLoader');
+                    if (loader) loader.classList.remove('hidden');
+                    
+                    // Fetch and render suggestions
+                    fetchSuggestionsFromTranscript(transcript)
+                        .then(suggestions => {
+                            renderDynamicSuggestions(suggestions);
+                            // Hide loader after suggestions are rendered
+                            if (loader) loader.classList.add('hidden');
+                        })
+                        .catch(error => {
+                            console.error('Error handling suggestions:', error);
+                            // Hide loader on error
+                            if (loader) loader.classList.add('hidden');
+                        });
                 }
             };
 
@@ -312,6 +329,7 @@ class AudioRecorder {
         const transcript = data.transcript || '';
         document.getElementById('outputText').value = transcript;
 
+        
         const liveTranscriptBox = document.getElementById('liveTranscript');
         if (liveTranscriptBox) {
           if (liveTranscriptBox) liveTranscriptBox.textContent = transcript;
@@ -687,19 +705,24 @@ let savedPhrases = [
 ];
 // Function to update suggestions based on category
 function updateSuggestions(category) {
-currentCategory = category;
-suggestionsContainer.innerHTML = '';
-phraseSuggestions[category].forEach(phrase => {
-const button = document.createElement('button');
-button.className = 'suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-20 cursor-pointer keyboard-focus';
-button.textContent = phrase;
-button.dataset.category = category;
-button.setAttribute('tabindex', '0');
-button.addEventListener('click', () => {
-outputText.value = phrase;
-});
-suggestionsContainer.appendChild(button);
-});
+    currentCategory = category;
+    suggestionsContainer.innerHTML = '';
+    phraseSuggestions[category].forEach(phrase => {
+        const button = document.createElement('button');
+        button.className = "suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-20 cursor-pointer keyboard-focus";
+        button.textContent = phrase;
+        button.dataset.category = category;
+        button.setAttribute('tabindex', '0');
+        button.addEventListener('click', () => {
+            const outputText = document.getElementById('outputText');
+            outputText.value = phrase;
+            // Add speech when clicked
+            if (window.speakText) {
+                window.speakText(phrase);
+            }
+        });
+        suggestionsContainer.appendChild(button);
+    });
 }
 // Initialize with default suggestions
 updateSuggestions('all');
@@ -1258,3 +1281,59 @@ stopListening();
 // Initialize saved phrases
 updateSavedPhrases();
 });
+
+
+
+// Add this function to fetch suggestions from the backend
+async function fetchSuggestionsFromTranscript(transcript) {
+    try {
+        const response = await fetch('http://127.0.0.1:5001/predict-suggestions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ transcript })
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            console.error('Error fetching suggestions:', data.error);
+            return [];
+        }
+        return data.suggestions || [];
+    } catch (error) {
+        console.error('Failed to fetch suggestions:', error);
+        return [];
+    }
+}
+
+// Add this function to render suggestion buttons
+function renderDynamicSuggestions(suggestions) {
+    const container = document.getElementById('dynamicSuggestions');
+    if (!container) return;
+    
+    // Clear existing suggestions
+    container.innerHTML = '';
+    
+    // Create and append suggestion buttons with matching style
+    suggestions.slice(0, 5).forEach(suggestion => {
+        const button = document.createElement('button');
+        button.className = "suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-20 cursor-pointer keyboard-focus";
+        button.textContent = suggestion;
+        
+        // Add click handler to insert text
+        button.addEventListener('click', () => {
+            const outputText = document.getElementById('outputText');
+            if (outputText) {
+                outputText.value = suggestion;
+                // Optionally speak the suggestion when clicked
+                if (window.speakText) {
+                    window.speakText(suggestion);
+                }
+            }
+        });
+        
+        container.appendChild(button);
+    });
+}
+
