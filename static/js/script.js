@@ -145,7 +145,7 @@ class SpeechService {
                 
                 // Update output text and fetch suggestions if it's a final result
                 if (event.results[event.results.length - 1].isFinal) {
-                    if (outputText) outputText.value = transcript;
+                    //if (outputText) outputText.value = transcript;
                     
                     // Show loader
                     const loader = document.getElementById('aiSuggestionsLoader');
@@ -563,60 +563,85 @@ social: [
 "Let's celebrate together"
 ]
 };
-let filteredHistory = [...mockHistory];
+let history = JSON.parse(localStorage.getItem('aacHistory')) || [];
+let filteredHistory = [...history];
 let currentFilter = 'all';
-function updateHistory(filter = 'all') {
-const historyList = document.getElementById('historyList');
-filteredHistory = filter === 'all' ?
-[...mockHistory] :
-mockHistory.filter(item => item.context === filter);
-historyList.innerHTML = filteredHistory.map(item => `
-<div class="history-item flex items-center justify-between p-5 bg-gray-100 rounded-lg transition-all duration-300 mb-4" data-context="${item.context}">
-<div>
-<p class="text-gray-900 font-medium">${item.text}</p>
-<div class="flex items-center space-x-2 mt-2">
-<span class="text-sm text-gray-400">${item.time}</span>
-<span class="text-sm text-gray-500">•</span>
-<span class="text-sm text-gray-500">${item.context}</span>
-</div>
-</div>
-<div class="flex items-center space-x-3">
-<button class="history-reuse w-10 h-10 flex items-center justify-center text-gray-400 hover:text-primary hover:bg-gray-200 rounded-full cursor-pointer transition-all duration-300 keyboard-focus" tabindex="0" aria-label="Reuse this phrase">
-<i class="ri-restart-line ri-lg"></i>
-</button>
-<button class="history-speak w-10 h-10 flex items-center justify-center text-gray-400 hover:text-primary hover:bg-gray-200 rounded-full cursor-pointer transition-all duration-300 keyboard-focus" tabindex="0" aria-label="Speak this phrase">
-<i class="ri-volume-up-line ri-lg"></i>
-</button>
-</div>
-</div>
-`).join('');
-// Add event listeners to history buttons
-document.querySelectorAll('.history-reuse').forEach((button, index) => {
-button.addEventListener('click', () => {
-document.getElementById('outputText').value = filteredHistory[index].text;
-// Add a visual feedback
-button.classList.add('text-primary', 'bg-gray-200');
-setTimeout(() => {
-button.classList.remove('text-primary', 'bg-gray-200');
-}, 300);
-});
-});
-document.querySelectorAll('.history-speak').forEach((button, index) => {
-button.addEventListener('click', () => {
-const success = speakText(filteredHistory[index].text);
-if (success) {
-// Add a visual feedback
-button.classList.add('text-primary', 'bg-gray-200');
-// Update the main speak button state
-updateSpeakButtonState(true);
-setTimeout(() => {
-button.classList.remove('text-primary', 'bg-gray-200');
-}, 300);
-showFeedbackToast(`Speaking: "${filteredHistory[index].text.substring(0, 30)}${filteredHistory[index].text.length > 30 ? '...' : ''}"`);
+
+async function addToHistory(text, context = 'General') {
+    const now = new Date();
+    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const date = now.toLocaleDateString();
+
+    await fetch(`${API_URL}/history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, context, time, date })
+    });
+
+    updateHistory(currentFilter);
 }
-});
-});
+
+async function updateHistory(filter = 'all') {
+    const res = await fetch(`${API_URL}/history`);
+    const data = await res.json();
+    const allHistory = data.history || [];
+
+    filteredHistory = filter === 'all'
+        ? allHistory
+        : allHistory.filter(item => item.context === filter);
+
+    const historyList = document.getElementById('historyList');
+    historyList.innerHTML = filteredHistory.map(item => `
+        <div class="flex items-center justify-between px-4 py-3 bg-muted rounded-xl mb-2">
+          <div>
+            <p class="text-white font-medium">${item.text}</p>
+            <p class="text-sm text-muted-foreground">${item.context || 'General'}</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="text-primary text-sm font-medium hover:underline history-reuse">↻ Reuse</button>
+            <button class="text-primary text-sm font-medium hover:underline history-speak">🔊 Speak</button>
+          </div>
+        </div>
+      `).join('');
+      
+      
+    // event listeners
+    document.querySelectorAll('.history-reuse').forEach((btn, i) =>
+        btn.addEventListener('click', () => {
+            document.getElementById('outputText').value = filteredHistory[i].text;
+        })
+    );
+
+    document.querySelectorAll('.history-speak').forEach((btn, i) =>
+        btn.addEventListener('click', () => {
+            window.speakText?.(filteredHistory[i].text);
+        })
+    );
 }
+
+
+// Add history filter functionality
+document.querySelectorAll('#historyFilterDropdown button').forEach(button => {
+    button.addEventListener('click', () => {
+        const filter = button.dataset.filter;
+        currentFilter = filter;
+        updateHistory(filter);
+        document.getElementById('historyFilterDropdown').classList.add('hidden');
+    });
+});
+
+// Initialize history
+updateHistory('all');
+
+// Add to history when text is spoken or manually entered
+document.getElementById('speakBtn').addEventListener('click', () => {
+    const outputText = document.getElementById('outputText');
+    const text = outputText.value.trim();
+    if (text) {
+        addToHistory(text);
+    }
+});
+
 function showFeedbackToast(message) {
 const toast = document.getElementById('feedbackToast');
 const messageEl = document.getElementById('feedbackMessage');
@@ -626,6 +651,7 @@ setTimeout(() => {
 toast.classList.remove('show');
 }, 3000);
 }
+
 // Initialize speech synthesis voices
 function initVoices() {
 if (typeof speechSynthesis !== 'undefined') {
@@ -714,11 +740,11 @@ function updateSuggestions(category) {
         button.dataset.category = category;
         button.setAttribute('tabindex', '0');
         button.addEventListener('click', () => {
-            const outputText = document.getElementById('outputText');
-            outputText.value = phrase;
-            // Add speech when clicked
-            if (window.speakText) {
-                window.speakText(phrase);
+            const success = window.speakText?.(phrase);
+            if (success) {
+                addToHistory(phrase, button.dataset.category || 'General');
+                const outputText = document.getElementById('outputText');
+                if (outputText) outputText.value = phrase;
             }
         });
         suggestionsContainer.appendChild(button);
@@ -1311,29 +1337,25 @@ async function fetchSuggestionsFromTranscript(transcript) {
 function renderDynamicSuggestions(suggestions) {
     const container = document.getElementById('dynamicSuggestions');
     if (!container) return;
-    
-    // Clear existing suggestions
+
     container.innerHTML = '';
-    
-    // Create and append suggestion buttons with matching style
+
     suggestions.slice(0, 5).forEach(suggestion => {
         const button = document.createElement('button');
         button.className = "suggestion-btn px-4 py-2 bg-primary bg-opacity-10 text-primary rounded-full whitespace-nowrap text-sm font-medium hover:bg-opacity-20 cursor-pointer keyboard-focus";
         button.textContent = suggestion;
-        
-        // Add click handler to insert text
+
         button.addEventListener('click', () => {
             const outputText = document.getElementById('outputText');
-            
             if (outputText) {
                 outputText.value = suggestion;
-                // Optionally speak the suggestion when clicked
-                if (window.speakText) {
-                    window.speakText(suggestion);
+                const success = window.speakText?.(suggestion); // only call once
+                if (success) {
+                    addToHistory(suggestion, 'AI');
                 }
             }
         });
-        
+
         container.appendChild(button);
     });
 }

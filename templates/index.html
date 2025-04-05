@@ -556,19 +556,17 @@ Suggestions are based on your environment. Turn off Smart Context to choose manu
 </div>
 
 <!-- 🤖 AI Suggestions -->
-<div id="aiSuggestionsContainer" class="bg-white rounded-lg shadow-sm p-6 mb-6">
-    <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-semibold text-gray-900 border-l-4 border-primary pl-3">
-            🤖 AI Suggestions
-        </h3>
-    </div>
-    <div id="dynamicSuggestions" class="flex flex-wrap gap-2">
-        <!-- Suggestions will be added here dynamically -->
-    </div>
-    <div id="aiSuggestionsLoader" class="hidden flex items-center space-x-2 p-4">
-        <div class="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
-        <span class="text-sm text-primary">AI is thinking...</span>
-    </div>
+<div id="aiSuggestionsContainer" class="mb-8">
+  <div class="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+    <i class="ri-robot-2-line text-primary text-base"></i>
+    <span>AI Suggestions</span>
+    <div class="h-px flex-grow bg-border"></div>
+  </div>
+  <div id="dynamicSuggestions" class="flex flex-wrap gap-2"></div>
+  <div id="aiSuggestionsLoader" class="hidden flex items-center space-x-2 p-4">
+    <div class="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
+    <span class="text-sm text-primary">AI is thinking...</span>
+  </div>
 </div>
 
 

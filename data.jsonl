@@ -1,0 +1,8 @@
+{"input": "User: I'm going to you and me prom\nContext: General\n", "output": "I'm going to you and me prom"}
+{"input": "User: Good morning\nContext: General\n", "output": "Good morning"}
+{"input": "User: I'd like some coffee please\nContext: General\n", "output": "I'd like some coffee please"}
+{"input": "User: What are you thinking?\nContext: AI\n", "output": "What are you thinking?"}
+{"input": "User: matcha, please\nContext: AI\n", "output": "matcha, please"}
+{"input": "User: What's the weather today?\nContext: General\n", "output": "What's the weather today?"}
+{"input": "User: This tastes delicious\nContext: food\n", "output": "This tastes delicious"}
+{"input": "User: i like coffee over matcha\nContext: General\n", "output": "i like coffee over matcha"}

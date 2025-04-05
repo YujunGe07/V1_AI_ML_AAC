@@ -11,11 +11,34 @@ import io
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import re
+from flask_sqlalchemy import SQLAlchemy
+import os
+
 AudioSegment.converter = "/opt/homebrew/bin/ffmpeg"
 
-
+history_log = []
 
 app = Flask(__name__)
+
+basedir = os.path.abspath(os.path.dirname(__file__))
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'aac_history.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+class HistoryEntry(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.Text, nullable=False)
+    time = db.Column(db.String(64))
+    context = db.Column(db.String(64))
+
+    def to_dict(self):
+        return {
+            "text": self.text,
+            "time": self.time,
+            "context": self.context
+        }
+
+
 
 CORS(app, resources={
     r"/speak": {
@@ -38,6 +61,24 @@ current_context = {
     'place': '',
     'city': ''
 }
+
+@app.route("/history", methods=["GET", "POST"])
+def history():
+    if request.method == "POST":
+        data = request.get_json()
+        new_entry = HistoryEntry(
+            text=data.get("text", ""),
+            time=data.get("time", ""),
+            context=data.get("context", "General")
+        )
+        db.session.add(new_entry)
+        db.session.commit()
+        return jsonify({"status": "added", "entry": new_entry.to_dict()})
+
+    # GET: return all entries (newest first)
+    entries = HistoryEntry.query.order_by(HistoryEntry.id.desc()).limit(50).all()
+    return jsonify({"history": [e.to_dict() for e in entries]})
+
 
 @app.route("/")
 def index():
