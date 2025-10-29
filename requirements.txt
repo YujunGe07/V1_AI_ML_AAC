@@ -1,0 +1,42 @@
+# Web app
+flask==3.1.2
+flask-cors==6.0.1
+
+# Database
+flask_sqlalchemy==3.1.1
+sqlalchemy==2.0.44
+
+# Core utils
+requests==2.32.5
+numpy==2.3.4
+
+# ML stack
+torch==2.9.0
+transformers==4.57.1
+huggingface-hub==0.36.0
+tokenizers==0.22.1
+safetensors==0.6.2
+
+# Audio I/O and processing
+pydub==0.25.1
+SpeechRecognition==3.14.3
+pyaudio==0.2.14
+noisereduce
+librosa
+soundfile
+scipy
+
+# Whisper transcription
+openai-whisper
+# If you previously installed the package named "whisper",
+# uninstall it to avoid conflicts: pip uninstall -y whisper
+
+# Geolocation
+geopy==2.4.1
+geographiclib==2.1
+
+# TTS
+google-cloud-texttospeech==2.33.0
+
+# OpenAI client
+openai==2.6.1
